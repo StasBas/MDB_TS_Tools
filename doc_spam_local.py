@@ -8,54 +8,45 @@ from faker import Faker
 from random import randint, choice
 
 
-REQUESTS = 2
-CONCURRENCY = 2
-DOCS_PER_REQUEST = 100
+REQUESTS = 1000
+CONCURRENCY = 30
+DOCS_PER_REQUEST = 1000
 
-PORT = 5070
+PORT = 6072
 HOST = "localhost"
-TARGET_DB = "pmdb"
-TARGET_COLL = "pmcl"
+TARGET_DB = "test"
+TARGET_COLL = "test"
+DROP = True
 
-QIN = Queue()
 FAKE = Faker()
 
 
 def main():
 
-    # client = pymongo.MongoClient(host=HOST, port=PORT)
-    # db = client[TARGET_DB]
-    # collection = db[TARGET_COLL]
-
-    drop_collection_if_has_docs()
-
-    ###############################################################################################################
-    # Patch - Find smarter way later - generate queue of ids for unique ids in multiple processes * multiple docs #
-    ###############################################################################################################
-    global QIN
-    rid = id_factory()
-    for i in range(1, REQUESTS * DOCS_PER_REQUEST+1):
-        QIN.put(i)
-    ###############################################################################################################
+    if DROP:
+        drop_collection_if_has_docs()
 
     multiprocessing.Pool(CONCURRENCY).map(insert, range(REQUESTS))
 
 
 def insert(i):
-    # global ID_1
-    id_1 = id_factory()
+    print(multiprocessing.current_process())
 
     client = pymongo.MongoClient(host=HOST, port=PORT)
     db = client[TARGET_DB]
     collection = db[TARGET_COLL]
+
     docs = list()
+    Faker.seed(randint(1, 9999))
+    id_1 = id_factory(value=(i*DOCS_PER_REQUEST))
+
     for j in range(DOCS_PER_REQUEST):
         docs.append(
             {
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #
                 ################################################################################################
-                "id": QIN.get(),
+                "id": next(id_1),
                 "date": datetime(randint(2019, 2021), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
                                  randint(0, 59)),
                 "description": FAKE.text(),
@@ -63,12 +54,17 @@ def insert(i):
                     "name": FAKE.first_name(),
                     "lastname": FAKE.last_name(),
                     "address": FAKE.address(),
-                }
+                },
+                "receiptNumber": str(randint(0, 3000)),
+                "status": choice(["created", "claimed", "other"]),
+                "score": randint(1, 100),
+                "source": f"source_{randint(1, 3)}"
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #
                 ################################################################################################
             }
         )
+
     resp = collection.insert_many(docs)
     if not resp.acknowledged:
         print(f"Iteration {i}: Got result '{resp.acknowledged}'")

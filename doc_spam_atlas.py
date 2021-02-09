@@ -7,17 +7,15 @@ import multiprocessing
 from multiprocessing import Queue
 from random import choice, randint
 
-REQUESTS = 5
-CONCURRENCY = 3
+REQUESTS = 1000
+CONCURRENCY = 30
 DOCS_PER_REQUEST = 1000
 DB_USER = os.environ.get("dbuser")
 DB_PASS = os.environ.get("dbpass")
 CLUSTER = f"cluster0.qsg3m.mongodb.net/pmdb"
-TARGET_DB = "pmdb"
-TARGET_COLL = "pmcl"
+TARGET_DB = "test"
+TARGET_COLL = "test"
 FAKE = Faker()
-ID_1 = None
-QIN = Queue()
 
 
 def main():
@@ -26,15 +24,6 @@ def main():
 
     # Insert documents
     # insert(i=1)  # debug single run
-
-    ###############################################################################################################
-    # Patch - Find smarter way later - generate queue of ids for unique ids in multiple processes * multiple docs #
-    ###############################################################################################################
-    global QIN
-    rid = id_factory()
-    for i in range(1, REQUESTS * DOCS_PER_REQUEST+1):
-        QIN.put(i)
-    ###############################################################################################################
 
     multiprocessing.Pool(CONCURRENCY).map(insert, range(REQUESTS))
 
@@ -51,32 +40,36 @@ def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, 
 
 def insert(i):
     print(multiprocessing.current_process())
-    print(i*i)
-    # global ID_1
-    id_1 = id_factory()
-    id_2 = id_factory()
-    id_3 = id_factory()
+    id_1 = id_factory(value=(i*DOCS_PER_REQUEST))
 
     client = pymongo.MongoClient(f"mongodb+srv://{DB_USER}:{DB_PASS}@{CLUSTER}?retryWrites=true&w=majority",
                                  ssl_ca_certs=certifi.where())
     db = client[TARGET_DB]
     collection = db[TARGET_COLL]
     docs = list()
+    Faker.seed(randint(1, 9999))
     for j in range(DOCS_PER_REQUEST):
         docs.append(
             {
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #
                 ################################################################################################
-                "id": QIN.get(),
-                "date": datetime(randint(2019, 2021), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
+                # "id": next(id_1),
+                # "date": datetime(randint(2019, 2021), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
+                #                  randint(0, 59)),
+                # "description": FAKE.text(),
+                # "person": {
+                #     "name": FAKE.first_name(),
+                #     "lastname": FAKE.last_name(),
+                #     "address": FAKE.address(),
+                # }
+
+                "id": next(id_1),
+                "receiptNumber": str(randint(0, 3000)),
+                "status": choice(["created", "claimed", "other"]),
+                "time": datetime(randint(2019, 2021), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
                                  randint(0, 59)),
-                "description": FAKE.text(),
-                "person": {
-                    "name": FAKE.first_name(),
-                    "lastname": FAKE.last_name(),
-                    "address": FAKE.address(),
-                }
+
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #
                 ################################################################################################
