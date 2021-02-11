@@ -9,7 +9,7 @@ import bson
 
 # DB_USER = os.environ.get("dbuser")
 # DB_PASS = os.environ.get("dbpass")
-PORT = 6072
+PORT = 6071
 HOST = "localhost"
 TARGET_DB = "test"
 TARGET_COLL = "test"
