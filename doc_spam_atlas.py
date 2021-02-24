@@ -12,8 +12,8 @@ CONCURRENCY = 30
 DOCS_PER_REQUEST = 1000
 DB_USER = os.environ.get("dbuser")
 DB_PASS = os.environ.get("dbpass")
-CLUSTER = f"cluster0.qsg3m.mongodb.net/pmdb"
-TARGET_DB = "test"
+CLUSTER = f"cluster0.qsg3m.mongodb.net/stasGreatDB"
+TARGET_DB = "stasGreatDB"
 TARGET_COLL = "test"
 FAKE = Faker()
 

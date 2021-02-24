@@ -2,3 +2,4 @@ pymongo
 certifi
 bson
 faker
+pymongocrypt
