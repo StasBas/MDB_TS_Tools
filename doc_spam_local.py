@@ -6,14 +6,15 @@ from multiprocessing import Pool, Queue
 from datetime import datetime
 from faker import Faker
 from random import randint, choice
+from uuid import uuid4
 
 
-REQUESTS = 1000
-CONCURRENCY = 30
+REQUESTS = 100
+CONCURRENCY = 20
 DOCS_PER_REQUEST = 1000
 
-PORT = 6071
-HOST = "localhost"
+CONN_STR = "mongodb://localhost:6070,localhost:6071,localhost:6072"
+
 TARGET_DB = "test"
 TARGET_COLL = "test"
 DROP = True
@@ -32,7 +33,7 @@ def main():
 def insert(i):
     print(multiprocessing.current_process())
 
-    client = pymongo.MongoClient(host=HOST, port=PORT)
+    client = pymongo.MongoClient(CONN_STR)
     db = client[TARGET_DB]
     collection = db[TARGET_COLL]
 
@@ -47,6 +48,7 @@ def insert(i):
                 # THE DOCUMENT                                                                                 #
                 ################################################################################################
                 "id": next(id_1),
+                "object": bson.ObjectId(),
                 "date": datetime(randint(2019, 2021), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
                                  randint(0, 59)),
                 "description": FAKE.text(),
@@ -58,7 +60,7 @@ def insert(i):
                 "receiptNumber": str(randint(0, 3000)),
                 "status": choice(["created", "claimed", "other"]),
                 "score": randint(1, 100),
-                "source": f"source_{randint(1, 3)}"
+                "source": f"source_{randint(1, 3)}",
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #
                 ################################################################################################
@@ -73,7 +75,7 @@ def insert(i):
 
 
 def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, docs_threshold=0):
-    client = pymongo.MongoClient(host=HOST, port=PORT)
+    client = pymongo.MongoClient(CONN_STR)
     db = client[db_name]
     collection = db[collection_name]
 
