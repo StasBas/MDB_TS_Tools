@@ -8,10 +8,9 @@ from faker import Faker
 from random import randint, choice
 from uuid import uuid4
 
-
 REQUESTS = 100
 CONCURRENCY = 20
-DOCS_PER_REQUEST = 1000
+DOCS_PER_REQUEST = 100
 
 CONN_STR = "mongodb://localhost:6070,localhost:6071,localhost:6072"
 
@@ -23,7 +22,6 @@ FAKE = Faker()
 
 
 def main():
-
     if DROP:
         drop_collection_if_has_docs()
 
@@ -39,19 +37,29 @@ def insert(i):
 
     docs = list()
     Faker.seed(randint(1, 9999))
-    id_1 = id_factory(value=(i*DOCS_PER_REQUEST))
+    id_1 = id_factory(value=(i * DOCS_PER_REQUEST))
+    id_2 = id_factory()
 
     for j in range(DOCS_PER_REQUEST):
+        d_id = next(id_2)
+        id_val = next(id_1)
+        dd = datetime(randint(2019, 2021), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
+                      randint(0, 59))
+
         docs.append(
             {
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #
                 ################################################################################################
-                "id": next(id_1),
+                "id": id_val,
                 "object": bson.ObjectId(),
-                "date": datetime(randint(2019, 2021), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
-                                 randint(0, 59)),
+                "date": dd,
+                "sts": datetime.timestamp(dd),
+                "msts": (datetime.timestamp(dd)*1000)+500,
                 "description": FAKE.text(),
+                "active": choice([True, False]),
+                "public": choice([True, False]),
+                "location": [randint(0, 90), randint(0, 90)],
                 "person": {
                     "name": FAKE.first_name(),
                     "lastname": FAKE.last_name(),
@@ -61,6 +69,7 @@ def insert(i):
                 "status": choice(["created", "claimed", "other"]),
                 "score": randint(1, 100),
                 "source": f"source_{randint(1, 3)}",
+
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #
                 ################################################################################################

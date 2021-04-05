@@ -1,4 +1,5 @@
 import os
+import bson
 import pymongo
 import certifi
 from faker import Faker
@@ -7,9 +8,9 @@ import multiprocessing
 from multiprocessing import Queue
 from random import choice, randint
 
-REQUESTS = 1000
-CONCURRENCY = 30
-DOCS_PER_REQUEST = 1000
+REQUESTS = 20
+CONCURRENCY = 20
+DOCS_PER_REQUEST = 100
 DB_USER = os.environ.get("dbuser")
 DB_PASS = os.environ.get("dbpass")
 CLUSTER = f"cluster0.qsg3m.mongodb.net/stasGreatDB"
@@ -41,6 +42,7 @@ def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, 
 def insert(i):
     print(multiprocessing.current_process())
     id_1 = id_factory(value=(i*DOCS_PER_REQUEST))
+    id_2 = id_factory()
 
     client = pymongo.MongoClient(f"mongodb+srv://{DB_USER}:{DB_PASS}@{CLUSTER}?retryWrites=true&w=majority",
                                  ssl_ca_certs=certifi.where())
@@ -49,26 +51,34 @@ def insert(i):
     docs = list()
     Faker.seed(randint(1, 9999))
     for j in range(DOCS_PER_REQUEST):
+        d_id = next(id_2)
+        id_val = next(id_1)
+        dd = datetime(randint(2019, 2021), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
+                      randint(0, 59))
+
         docs.append(
             {
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #
                 ################################################################################################
-                # "id": next(id_1),
-                # "date": datetime(randint(2019, 2021), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
-                #                  randint(0, 59)),
-                # "description": FAKE.text(),
-                # "person": {
-                #     "name": FAKE.first_name(),
-                #     "lastname": FAKE.last_name(),
-                #     "address": FAKE.address(),
-                # }
-
-                "id": next(id_1),
+                "id": id_val,
+                "object": bson.ObjectId(),
+                "date": dd,
+                "sts": datetime.timestamp(dd),
+                "msts": (datetime.timestamp(dd) * 1000) + 500,
+                "description": FAKE.text(),
+                "active": choice([True, False]),
+                "public": choice([True, False]),
+                "location": [randint(0, 90), randint(0, 90)],
+                "person": {
+                    "name": FAKE.first_name(),
+                    "lastname": FAKE.last_name(),
+                    "address": FAKE.address(),
+                },
                 "receiptNumber": str(randint(0, 3000)),
                 "status": choice(["created", "claimed", "other"]),
-                "time": datetime(randint(2019, 2021), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
-                                 randint(0, 59)),
+                "score": randint(1, 100),
+                "source": f"source_{randint(1, 3)}",
 
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #
