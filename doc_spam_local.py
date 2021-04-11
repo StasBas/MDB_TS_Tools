@@ -19,6 +19,7 @@ TARGET_COLL = "test"
 DROP = True
 
 FAKE = Faker()
+CLIENT = None
 
 
 def main():
@@ -31,9 +32,7 @@ def main():
 def insert(i):
     print(multiprocessing.current_process())
 
-    client = pymongo.MongoClient(CONN_STR)
-    db = client[TARGET_DB]
-    collection = db[TARGET_COLL]
+    collection = get_collection()
 
     docs = list()
     Faker.seed(randint(1, 9999))
@@ -55,7 +54,7 @@ def insert(i):
                 "object": bson.ObjectId(),
                 "date": dd,
                 "sts": datetime.timestamp(dd),
-                "msts": (datetime.timestamp(dd)*1000)+500,
+                "msts": (datetime.timestamp(dd) * 1000) + 500,
                 "description": FAKE.text(),
                 "active": choice([True, False]),
                 "public": choice([True, False]),
@@ -96,6 +95,20 @@ def id_factory(value: int = 0, step: int = 1):
     while True:
         value += step
         yield value
+
+
+def get_client():
+    global CLIENT
+    if not CLIENT:
+        CLIENT = pymongo.MongoClient(CONN_STR)
+    return CLIENT
+
+
+def get_collection(db_name=TARGET_DB, coll_name=TARGET_COLL):
+    client = get_client()
+    db = client[db_name]
+    collection = db[coll_name]
+    return collection
 
 
 if __name__ == "__main__":
