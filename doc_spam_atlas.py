@@ -8,7 +8,7 @@ import bson
 from multiprocessing import Queue
 from random import choice, randint
 
-REQUESTS = 10000                                # REQUESTS (will affect duration)
+REQUESTS = 100                                  # REQUESTS (will affect duration)
 CONCURRENCY = 21                                # MAX CONCURRENCY (macs die past 30)
 DOCS_PER_REQUEST = 1000                         # DOCS TO INSERT PER REQUEST
 DB_USER = os.environ.get("dbuser")              # USERNAME
@@ -82,9 +82,9 @@ def insert(i):
     resp = collection.insert_many(docs)
     if not resp.acknowledged:
         print(f"Iteration {i}: Got result '{resp.acknowledged}'")
-        print(f"documents existing now: {collection.count_documents({})}")
     else:
         print(f"Iteration {i} Done.")
+        print(f"documents existing now: {collection.count_documents({})}")
 
 
 def id_factory(value: int = 0, step: int = 1):
