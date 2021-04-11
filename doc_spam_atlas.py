@@ -8,33 +8,49 @@ import bson
 from multiprocessing import Queue
 from random import choice, randint
 
-REQUESTS = 100                                  # REQUESTS (will affect duration)
-CONCURRENCY = 21                                # MAX CONCURRENCY (macs die past 30)
-DOCS_PER_REQUEST = 1000                         # DOCS TO INSERT PER REQUEST
-DB_USER = os.environ.get("dbuser")              # USERNAME
-DB_PASS = os.environ.get("dbpass")              # PASSWORD
-CLUSTER = "cluster1.efy5d.mongodb.net/test"     # CLUSTER ADDRESS
-TARGET_DB = "test"                              # DB TO SPAM
-TARGET_COLL = "spam"                            # COLLECTION TO SPAM
-DROP = True                                     # DROP COLLECTION BEFORE SPAM
+REQUESTS = 10000  # REQUESTS (will affect duration)
+CONCURRENCY = 21  # MAX CONCURRENCY (macs die past 30)
+DOCS_PER_REQUEST = 1000  # DOCS TO INSERT PER REQUEST
+DB_USER = os.environ.get("dbuser")  # USERNAME
+DB_PASS = os.environ.get("dbpass")  # PASSWORD
+CLUSTER = "cluster1.efy5d.mongodb.net/test"  # CLUSTER ADDRESS
+TARGET_DB = "spam"  # DB TO SPAM
+TARGET_COLL = "spam"  # COLLECTION TO SPAM
+DROP = True  # DROP COLLECTION BEFORE SPAM
 FAKE = Faker()
 CLIENT = None
+LOG_COLL = True
+LOG_COLL_NAME = None
 
 
 def main():
     if DROP:
         drop_collection_if_has_docs()
+
+    a = multiprocessing.current_process()
+    print(a)
+
     multiprocessing.Pool(CONCURRENCY).map(insert, range(REQUESTS))
 
 
 def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, docs_threshold=0):
-    collection = get_collection(db_name, collection_name)
+    client = pymongo.MongoClient(f"mongodb+srv://{DB_USER}:{DB_PASS}@{CLUSTER}?retryWrites=true&w=majority",
+                                 ssl_ca_certs=certifi.where())
+    db = client[db_name]
+    collection = db[collection_name]
     if collection.estimated_document_count() > docs_threshold:
         collection.drop()
 
 
 def insert(i):
-    print(multiprocessing.current_process())
+    wrkr = multiprocessing.current_process().name
+    if LOG_COLL:
+        global LOG_COLL_NAME
+        if not LOG_COLL_NAME:
+            LOG_COLL_NAME = datetime.now().strftime("spam_log_%Y%m%d%H%M%S")
+        log_coll = get_collection(coll_name=LOG_COLL_NAME)
+        log_coll.insert_one({"iteration": i, "start": datetime.now(), "worker": wrkr})
+    print(f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: Iteration {i} Start")
 
     collection = get_collection()
 
@@ -81,10 +97,14 @@ def insert(i):
 
     resp = collection.insert_many(docs)
     if not resp.acknowledged:
-        print(f"Iteration {i}: Got result '{resp.acknowledged}'")
+        print(f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: Iteration {i}: Got result '{resp.acknowledged}'")
     else:
-        print(f"Iteration {i} Done.")
-        print(f"documents existing now: {collection.count_documents({})}")
+        if LOG_COLL:
+            log_coll.update_one(filter={"iteration": i}, update={"$set": {"end": datetime.now()}})
+        print(
+            f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: Iteration {i} Done. "
+            f"Documents existing now: {collection.count_documents({})}"
+        )
 
 
 def id_factory(value: int = 0, step: int = 1):
