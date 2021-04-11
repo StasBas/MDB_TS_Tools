@@ -8,14 +8,14 @@ import bson
 from multiprocessing import Queue
 from random import choice, randint
 
-REQUESTS = 100                                  # REQUESTS (will affect duration)
-CONCURRENCY = 20                                # MAX CONCURRENCY (macs die past 30)
+REQUESTS = 10000                                # REQUESTS (will affect duration)
+CONCURRENCY = 21                                # MAX CONCURRENCY (macs die past 30)
 DOCS_PER_REQUEST = 1000                         # DOCS TO INSERT PER REQUEST
 DB_USER = os.environ.get("dbuser")              # USERNAME
 DB_PASS = os.environ.get("dbpass")              # PASSWORD
 CLUSTER = "cluster1.efy5d.mongodb.net/test"     # CLUSTER ADDRESS
 TARGET_DB = "test"                              # DB TO SPAM
-TARGET_COLL = "test"                            # COLLECTION TO SPAM
+TARGET_COLL = "spam"                            # COLLECTION TO SPAM
 DROP = True                                     # DROP COLLECTION BEFORE SPAM
 FAKE = Faker()
 CLIENT = None
@@ -72,6 +72,7 @@ def insert(i):
                 "score": randint(1, 100),
                 "source": f"source_{randint(1, 3)}",
 
+                "iteration": i,
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #
                 ################################################################################################
@@ -81,6 +82,7 @@ def insert(i):
     resp = collection.insert_many(docs)
     if not resp.acknowledged:
         print(f"Iteration {i}: Got result '{resp.acknowledged}'")
+        print(f"documents existing now: {collection.count_documents({})}")
     else:
         print(f"Iteration {i} Done.")
 
