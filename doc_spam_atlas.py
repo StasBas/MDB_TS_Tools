@@ -8,25 +8,22 @@ import bson
 from multiprocessing import Queue
 from random import choice, randint
 
-REQUESTS = 100
-CONCURRENCY = 5
-DOCS_PER_REQUEST = 1000
-DB_USER = os.environ.get("dbuser")
-DB_PASS = os.environ.get("dbpass")
-CLUSTER = "cluster1.efy5d.mongodb.net/test"  # f"cluster0.qsg3m.mongodb.net/pmdb"
-TARGET_DB = "test_2"
-TARGET_COLL = "test"
+REQUESTS = 100                                  # REQUESTS (will affect duration)
+CONCURRENCY = 20                                # MAX CONCURRENCY (macs die past 30)
+DOCS_PER_REQUEST = 1000                         # DOCS TO INSERT PER REQUEST
+DB_USER = os.environ.get("dbuser")              # USERNAME
+DB_PASS = os.environ.get("dbpass")              # PASSWORD
+CLUSTER = "cluster1.efy5d.mongodb.net/test"     # CLUSTER ADDRESS
+TARGET_DB = "test"                              # DB TO SPAM
+TARGET_COLL = "test"                            # COLLECTION TO SPAM
+DROP = True                                     # DROP COLLECTION BEFORE SPAM
 FAKE = Faker()
 CLIENT = None
 
 
 def main():
-    # Drop collection if it exists
-    drop_collection_if_has_docs()
-
-    # Insert documents
-    # insert(i=1)  # debug single run
-
+    if DROP:
+        drop_collection_if_has_docs()
     multiprocessing.Pool(CONCURRENCY).map(insert, range(REQUESTS))
 
 
@@ -38,11 +35,6 @@ def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, 
 
 def insert(i):
     print(multiprocessing.current_process())
-
-    # client = pymongo.MongoClient(f"mongodb+srv://{DB_USER}:{DB_PASS}@{CLUSTER}?retryWrites=true&w=majority",
-    #                              ssl_ca_certs=certifi.where())
-    # db = client[TARGET_DB]
-    # collection = db[TARGET_COLL]
 
     collection = get_collection()
 
@@ -65,8 +57,7 @@ def insert(i):
                 "id": id_val,
                 "object": bson.ObjectId(),
                 "date": dd,
-                "sts": datetime.timestamp(dd),
-                "msts": (datetime.timestamp(dd) * 1000) + 500,
+                "ts_ms": (datetime.timestamp(dd) * 1000) + randint(100, 999),
                 "description": FAKE.text(),
                 "active": choice([True, False]),
                 "public": choice([True, False]),
