@@ -8,29 +8,51 @@ from faker import Faker
 from random import randint, choice
 from uuid import uuid4
 
-REQUESTS = 100
-CONCURRENCY = 20
-DOCS_PER_REQUEST = 100
-
 CONN_STR = "mongodb://localhost:6070,localhost:6071,localhost:6072"
-
-TARGET_DB = "test"
-TARGET_COLL = "test"
-DROP = True
-
+REQUESTS = 100  # REQUESTS (will affect duration)
+CONCURRENCY = 10  # MAX CONCURRENCY (macs die past 30)
+DOCS_PER_REQUEST = 1000  # DOCS TO INSERT PER REQUEST
+TARGET_DB = "test"  # DB TO SPAM
+TARGET_COLL = "test"  # COLLECTION TO SPAM
+DROP = True  # DROP COLLECTION BEFORE SPAM
 FAKE = Faker()
 CLIENT = None
+LOG_COLL = True
+LOG_COLL_NAME = None
+FORK_CLIENT = False
 
 
 def main():
     if DROP:
         drop_collection_if_has_docs()
 
+    if FORK_CLIENT:
+        client = get_client()
+        client["test"].command("ping")
+
+    a = multiprocessing.current_process()
+    print(a)
+
     multiprocessing.Pool(CONCURRENCY).map(insert, range(REQUESTS))
 
 
+def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, docs_threshold=0):
+    client = pymongo.MongoClient(CONN_STR)
+    db = client[db_name]
+    collection = db[collection_name]
+    if collection.estimated_document_count() > docs_threshold:
+        collection.drop()
+
+
 def insert(i):
-    print(multiprocessing.current_process())
+    wrkr = multiprocessing.current_process().name
+    if LOG_COLL:
+        global LOG_COLL_NAME
+        if not LOG_COLL_NAME:
+            LOG_COLL_NAME = datetime.now().strftime("spam_log_%Y%m%d%H%M%S")
+        log_coll = get_collection(coll_name=LOG_COLL_NAME)
+        log_coll.insert_one({"iteration": i, "start": datetime.now(), "worker": wrkr})
+    print(f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: Iteration {i} Start")
 
     collection = get_collection()
 
@@ -52,10 +74,10 @@ def insert(i):
                 ################################################################################################
                 "id": id_val,
                 "object": bson.ObjectId(),
-                "date": dd,
-                "sts": datetime.timestamp(dd),
-                "msts": (datetime.timestamp(dd) * 1000) + 500,
+                "date_rolled": dd,
+                "ts_ms": (datetime.timestamp(dd) * 1000) + randint(100, 999),
                 "description": FAKE.text(),
+                "keyword": str(FAKE.text()).split(' ')[0],
                 "active": choice([True, False]),
                 "public": choice([True, False]),
                 "location": [randint(0, 90), randint(0, 90)],
@@ -68,6 +90,11 @@ def insert(i):
                 "status": choice(["created", "claimed", "other"]),
                 "score": randint(1, 100),
                 "source": f"source_{randint(1, 3)}",
+                "internal": {
+                    "iteration": i,
+                    "internal_id": d_id,
+                    "date_created": datetime.now(),
+                },
 
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #
@@ -77,18 +104,15 @@ def insert(i):
 
     resp = collection.insert_many(docs)
     if not resp.acknowledged:
-        print(f"Iteration {i}: Got result '{resp.acknowledged}'")
+        print(
+            f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: Iteration {i}: Got result '{resp.acknowledged}'")
     else:
-        print(f"Iteration {i} Done.")
-
-
-def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, docs_threshold=0):
-    client = pymongo.MongoClient(CONN_STR)
-    db = client[db_name]
-    collection = db[collection_name]
-
-    if collection.estimated_document_count() > docs_threshold:
-        collection.drop()
+        if LOG_COLL:
+            log_coll.update_one(filter={"iteration": i}, update={"$set": {"end": datetime.now()}})
+        print(
+            f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: Iteration {i} Done. "
+            f"Documents existing now: {collection.count_documents({})}"
+        )
 
 
 def id_factory(value: int = 0, step: int = 1):
