@@ -115,7 +115,7 @@ def insert(i):
             log_coll.update_one(filter={"iteration": i}, update={"$set": {"end": datetime.now()}})
         print(
             f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: Iteration {i} Done. "
-            f"Documents existing now: {collection.count_documents({})}"
+            f"Documents existing now: {collection.count_documents({})}"  # TODO: Replace with count to reduce stress
         )
 
 
