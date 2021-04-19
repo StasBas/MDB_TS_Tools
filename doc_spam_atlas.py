@@ -13,7 +13,7 @@ DB_PASS = os.environ.get("dbpass")  # PASSWORD (add to env "export <password>")
 CLUSTER = "cluster1.efy5d.mongodb.net/test"  # CLUSTER ADDRESS
 CONN_STR = f"mongodb+srv://{DB_USER}:{DB_PASS}@{CLUSTER}?retryWrites=true&w=majority"
 
-REQUESTS = 10000  # TOTAL NUMBER OF REQUESTS SENT TO DB (will affect duration)
+REQUESTS = 10  # TOTAL NUMBER OF REQUESTS SENT TO DB (will affect duration)
 CONCURRENCY = 10  # MAX CONCURRENT REQUESTS (macs die past 30)
 DOCS_PER_REQUEST = 1000  # DOCS TO INSERT PER REQUEST
 TARGET_DB = "test"  # DB TO SPAM
