@@ -13,7 +13,7 @@ DB_PASS = os.environ.get("dbpass")  # PASSWORD (add to env "export <password>")
 CLUSTER = "cluster1.efy5d.mongodb.net/test"  # CLUSTER ADDRESS
 CONN_STR = f"mongodb+srv://{DB_USER}:{DB_PASS}@{CLUSTER}?retryWrites=true&w=majority"
 
-REQUESTS = 10  # TOTAL NUMBER OF REQUESTS SENT TO DB (will affect duration)
+REQUESTS = 10000  # TOTAL NUMBER OF REQUESTS SENT TO DB (will affect duration)
 CONCURRENCY = 10  # MAX CONCURRENT REQUESTS (macs die past 30)
 DOCS_PER_REQUEST = 1000  # DOCS TO INSERT PER REQUEST
 TARGET_DB = "test"  # DB TO SPAM
@@ -47,9 +47,16 @@ def main():
 def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, docs_threshold=0):
     client = pymongo.MongoClient(CONN_STR, ssl_ca_certs=certifi.where())
     db = client[db_name]
-    collection = db[collection_name]
-    if collection.estimated_document_count() > docs_threshold:
-        collection.drop()
+    collections = []
+    if SPLIT_COLLECTIONS:
+        for i in range(SPLIT_COLLECTIONS):
+            collections.append(TARGET_COLL+f"_{i}" )
+    else:
+        collections.append(TARGET_COLL)
+    for cname in collections:
+        collection = db[cname]
+        if collection.estimated_document_count() > docs_threshold:
+            collection.drop()
 
 
 def insert(i):
