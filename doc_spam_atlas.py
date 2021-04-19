@@ -54,18 +54,19 @@ def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, 
 
 def insert(i):
     wrkr = multiprocessing.current_process().name
-    if LOG_COLL:
-        global LOG_COLL_NAME
-        if not LOG_COLL_NAME:
-            LOG_COLL_NAME = datetime.now().strftime(f"spam_{TARGET_COLL}_%Y%m%d%H%M%S")
-        log_coll = get_collection(coll_name=LOG_COLL_NAME)
-        log_coll.insert_one({"iteration": i, "start": datetime.now(), "worker": wrkr})
-    print(f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: Iteration {i} Start")
 
     if SPLIT_COLLECTIONS:
         collection = get_collection(coll_name=choice([TARGET_COLL+f"_{i}" for i in range(SPLIT_COLLECTIONS)]))
     else:
         collection = get_collection()
+
+    if LOG_COLL:
+        global LOG_COLL_NAME
+        if not LOG_COLL_NAME:
+            LOG_COLL_NAME = datetime.now().strftime(f"spam_{TARGET_COLL}_%Y%m%d%H%M%S")
+        log_coll = get_collection(coll_name=LOG_COLL_NAME)
+        log_coll.insert_one({"iteration": i, "start": datetime.now(), "worker": wrkr, "collection": collection.name})
+    print(f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: Iteration {i} Start")
 
     docs = list()
     Faker.seed(randint(1, 9999))
