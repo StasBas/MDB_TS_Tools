@@ -13,8 +13,8 @@ DB_PASS = os.environ.get("dbpass")  # PASSWORD (add to env "export <password>")
 CLUSTER = "cluster1.efy5d.mongodb.net/test"  # CLUSTER ADDRESS
 CONN_STR = f"mongodb+srv://{DB_USER}:{DB_PASS}@{CLUSTER}?retryWrites=true&w=majority"
 
-REQUESTS = 100  # REQUESTS (will affect duration)
-CONCURRENCY = 10  # MAX CONCURRENCY (macs die past 30)
+REQUESTS = 10  # TOTAL NUMBER OF REQUESTS SENT TO DB (will affect duration)
+CONCURRENCY = 10  # MAX CONCURRENT REQUESTS (macs die past 30)
 DOCS_PER_REQUEST = 1000  # DOCS TO INSERT PER REQUEST
 TARGET_DB = "test"  # DB TO SPAM
 TARGET_COLL = "test"  # COLLECTION TO SPAM
@@ -24,6 +24,10 @@ CLIENT = None
 LOG_COLL = True
 LOG_COLL_NAME = None
 FORK_CLIENT = False
+SPLIT_COLLECTIONS = 0
+
+RAMP_UP_SECONDS = 60  # TODO: not utilized
+MAX_DURATION = None  # TODO: not utilized
 
 
 def main():
@@ -53,12 +57,15 @@ def insert(i):
     if LOG_COLL:
         global LOG_COLL_NAME
         if not LOG_COLL_NAME:
-            LOG_COLL_NAME = datetime.now().strftime("spam_log_%Y%m%d%H%M%S")
+            LOG_COLL_NAME = datetime.now().strftime(f"spam_{TARGET_COLL}_%Y%m%d%H%M%S")
         log_coll = get_collection(coll_name=LOG_COLL_NAME)
         log_coll.insert_one({"iteration": i, "start": datetime.now(), "worker": wrkr})
     print(f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: Iteration {i} Start")
 
-    collection = get_collection()
+    if SPLIT_COLLECTIONS:
+        collection = get_collection(coll_name=choice([TARGET_COLL+f"_{i}" for i in range(SPLIT_COLLECTIONS)]))
+    else:
+        collection = get_collection()
 
     docs = list()
     Faker.seed(randint(1, 9999))
@@ -114,8 +121,8 @@ def insert(i):
         if LOG_COLL:
             log_coll.update_one(filter={"iteration": i}, update={"$set": {"end": datetime.now()}})
         print(
-            f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: Iteration {i} Done. "
-            f"Documents existing now: {collection.count_documents({})}"  # TODO: Replace with count to reduce stress
+            f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} ({TARGET_DB}.{collection.name}) {wrkr}: Iteration {i} Done. "
+            f"Documents committed: {collection.count_documents({})}"  # TODO: Replace with count to reduce stress
         )
 
 
