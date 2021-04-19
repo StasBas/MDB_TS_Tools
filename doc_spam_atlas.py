@@ -38,9 +38,6 @@ def main():
         client = get_client()
         client["test"].command("ping")
 
-    a = multiprocessing.current_process()
-    print(a)
-
     multiprocessing.Pool(CONCURRENCY).map(insert, range(REQUESTS))
 
 
