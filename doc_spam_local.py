@@ -1,4 +1,5 @@
 import pymongo
+import certifi
 import bson
 from pymongo.errors import DocumentTooLarge, WriteError
 import multiprocessing
@@ -7,6 +8,7 @@ from datetime import datetime
 from faker import Faker
 from random import randint, choice
 from uuid import uuid4
+
 
 CONN_STR = "mongodb://localhost:6070,localhost:6071,localhost:6072"
 REQUESTS = 100  # REQUESTS (will affect duration)
@@ -17,7 +19,7 @@ TARGET_COLL = "test"  # COLLECTION TO SPAM
 DROP = True  # DROP COLLECTION BEFORE SPAM
 FAKE = Faker()
 CLIENT = None
-LOG_COLL = True
+LOG_COLL = False
 LOG_COLL_NAME = None
 FORK_CLIENT = False
 
@@ -64,7 +66,7 @@ def insert(i):
     for j in range(DOCS_PER_REQUEST):
         d_id = next(id_2)
         id_val = next(id_1)
-        dd = datetime(randint(2019, 2021), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
+        dd = datetime(randint(2019, 2022), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
                       randint(0, 59))
 
         docs.append(
@@ -81,6 +83,7 @@ def insert(i):
                 "active": choice([True, False]),
                 "public": choice([True, False]),
                 "location": [randint(0, 90), randint(0, 90)],
+                "words_array": FAKE.text().replace(".", "").replace("\n", "").split(" "),
                 "person": {
                     "name": FAKE.first_name(),
                     "lastname": FAKE.last_name(),
@@ -94,7 +97,7 @@ def insert(i):
                     "iteration": i,
                     "internal_id": d_id,
                     "date_created": datetime.now(),
-                },
+                }
 
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #

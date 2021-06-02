@@ -8,26 +8,24 @@ import bson
 from multiprocessing import Queue
 from random import choice, randint
 
-DB_USER = os.environ.get("dbuser")  # USERNAME (add to env "export <username>")
-DB_PASS = os.environ.get("dbpass")  # PASSWORD (add to env "export <password>")
-CLUSTER = "cluster1.efy5d.mongodb.net/test"  # CLUSTER ADDRESS
-CONN_STR = f"mongodb+srv://{DB_USER}:{DB_PASS}@{CLUSTER}?retryWrites=true&w=majority"
+CONN_STR = os.environ.get("CONNSTR")  # CLUSTER CONNECTION STRING (console command: export CONNSTR="<paste here>")
 
-REQUESTS = 10  # TOTAL NUMBER OF REQUESTS SENT TO DB (will affect duration)
+REQUESTS = 1000  # TOTAL NUMBER OF REQUESTS SENT TO DB
 CONCURRENCY = 10  # MAX CONCURRENT REQUESTS (macs die past 30)
 DOCS_PER_REQUEST = 1000  # DOCS TO INSERT PER REQUEST
 TARGET_DB = "test"  # DB TO SPAM
 TARGET_COLL = "test"  # COLLECTION TO SPAM
 DROP = True  # DROP COLLECTION BEFORE SPAM
-FAKE = Faker()
-CLIENT = None
-LOG_COLL = True
-LOG_COLL_NAME = None
-FORK_CLIENT = False
-SPLIT_COLLECTIONS = 0
+LOG_COLL = False  # CREATE COLLECTION LOGGING THE SPAM PROCESS
+FORK_CLIENT = False  # DEFINE CLIENT BEFORE FORKING PROCESS - SHOULD SEE WARNING IF TRUE
+SPLIT_COLLECTIONS = 0  # SPLIT THE REQUESTS AMONG MULTIPLE TARGET COLLECTIONS
 
 RAMP_UP_SECONDS = 60  # TODO: not utilized
-MAX_DURATION = None  # TODO: not utilized
+MAX_DURATION = None  # TODO: not utilized.  # When not None: Ignore requests.
+
+LOG_COLL_NAME = None
+CLIENT = None
+FAKE = Faker()
 
 
 def main():
@@ -41,15 +39,16 @@ def main():
     multiprocessing.Pool(CONCURRENCY).map(insert, range(REQUESTS))
 
 
-def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, docs_threshold=0):
+def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, split=SPLIT_COLLECTIONS,
+                                docs_threshold=0):
     client = pymongo.MongoClient(CONN_STR, ssl_ca_certs=certifi.where())
     db = client[db_name]
     collections = []
-    if SPLIT_COLLECTIONS:
-        for i in range(SPLIT_COLLECTIONS):
-            collections.append(TARGET_COLL+f"_{i}" )
+    if split:
+        for i in range(split):
+            collections.append(collection_name+f"_{i}" )
     else:
-        collections.append(TARGET_COLL)
+        collections.append(collection_name)
     for cname in collections:
         collection = db[cname]
         if collection.estimated_document_count() > docs_threshold:
@@ -63,6 +62,8 @@ def insert(i):
         collection = get_collection(coll_name=choice([TARGET_COLL+f"_{i}" for i in range(SPLIT_COLLECTIONS)]))
     else:
         collection = get_collection()
+
+    res = collection.aggregate()
 
     if LOG_COLL:
         global LOG_COLL_NAME
@@ -97,6 +98,7 @@ def insert(i):
                 "active": choice([True, False]),
                 "public": choice([True, False]),
                 "location": [randint(0, 90), randint(0, 90)],
+                "words_array": FAKE.text().replace(".", "").replace("\n", "").split(" "),
                 "person": {
                     "name": FAKE.first_name(),
                     "lastname": FAKE.last_name(),
@@ -112,6 +114,7 @@ def insert(i):
                     "date_created": datetime.now(),
                 },
 
+
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #
                 ################################################################################################
@@ -126,7 +129,8 @@ def insert(i):
         if LOG_COLL:
             log_coll.update_one(filter={"iteration": i}, update={"$set": {"end": datetime.now()}})
         print(
-            f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} ({TARGET_DB}.{collection.name}) {wrkr}: Iteration {i} Done. "
+            f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: {TARGET_DB}.{collection.name}, "
+            f"Iteration {i} Done. "
             f"Documents committed: {collection.count_documents({})}"  # TODO: Replace with count to reduce stress
         )
 
