@@ -9,9 +9,8 @@ from faker import Faker
 from random import randint, choice
 from uuid import uuid4
 
-
-CONN_STR = "mongodb://localhost:6070,localhost:6071,localhost:6072"
-REQUESTS = 100  # REQUESTS (will affect duration)
+CONN_STR = "mongodb://localhost:5070"  # "mongodb://localhost:6070,localhost:6071,localhost:6072"
+REQUESTS = 10  # REQUESTS (will affect duration)
 CONCURRENCY = 10  # MAX CONCURRENCY (macs die past 30)
 DOCS_PER_REQUEST = 1000  # DOCS TO INSERT PER REQUEST
 TARGET_DB = "test"  # DB TO SPAM
@@ -60,7 +59,7 @@ def insert(i):
 
     docs = list()
     Faker.seed(randint(1, 9999))
-    id_1 = id_factory(value=(i * DOCS_PER_REQUEST))
+    id_1 = id_factory(value=((i+3000000) * DOCS_PER_REQUEST))
     id_2 = id_factory()
 
     for j in range(DOCS_PER_REQUEST):
@@ -68,6 +67,16 @@ def insert(i):
         id_val = next(id_1)
         dd = datetime(randint(2019, 2022), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
                       randint(0, 59))
+
+        doc_arr = list()
+        for n in range(randint(0, 1)):
+            t = randint(65, 88)
+            doc_arr.append({
+                # "in_id": n + 1,
+                "in_id": randint(1, 5),
+                "str_id": f"identifier{n + 1}",
+                "type": f"{chr(t)}{chr(t + 1)}{chr(t + 2)}"
+            })
 
         docs.append(
             {
@@ -85,19 +94,48 @@ def insert(i):
                 "location": [randint(0, 90), randint(0, 90)],
                 "words_array": FAKE.text().replace(".", "").replace("\n", "").split(" "),
                 "person": {
-                    "name": FAKE.first_name(),
+                    "name": choice([FAKE.first_name(), None]),
                     "lastname": FAKE.last_name(),
+                    "eye_color": choice(["blue", "green", "crimson", "brown", "black"]),
+                    "hair_color": choice(["bold", "blond", "black", "white", "grey"]),
                     "address": FAKE.address(),
                 },
                 "receiptNumber": str(randint(0, 3000)),
                 "status": choice(["created", "claimed", "other"]),
-                "score": randint(1, 100),
+                "score": randint(1, 10000),
                 "source": f"source_{randint(1, 3)}",
+                "obj_array": [
+                    {
+                        "name": f"name{randint(0, 1000)}",
+                        "type": randint(1, 10)
+                    },
+                    {
+                        "name": f"name{randint(0, 1000)}",
+                        "type": randint(1, 10)
+                    },
+                    {
+                        "name": f"name{randint(0, 1000)}",
+                        "type": randint(1, 10)
+                    },
+                ],
+                "nest_obj_arr": {
+                    "ex_type": choice(["t1", "t2", "t3"]),
+                    "obj_arr": doc_arr
+                },
+                "nest_obj_obj": {
+                    "type": choice(["t1", "t2", "t3"]),
+                    "properties": {
+                        "prop1": choice(["p1", "p2", "p3"]),
+                        "prop2": choice(["p1", "p2", "p3"]),
+                        "prop3": choice(["p1", "p2", "p3"]),
+                        "prop4": choice(["p1", "p2", "p3"])
+                    }
+                },
                 "internal": {
                     "iteration": i,
                     "internal_id": d_id,
                     "date_created": datetime.now(),
-                }
+                },
 
                 ################################################################################################
                 # THE DOCUMENT                                                                                 #
@@ -112,10 +150,10 @@ def insert(i):
     else:
         if LOG_COLL:
             log_coll.update_one(filter={"iteration": i}, update={"$set": {"end": datetime.now()}})
-        print(
-            f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: Iteration {i} Done. "
-            f"Documents existing now: {collection.count_documents({})}"
-        )
+        # print(
+        #     f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {wrkr}: Iteration {i} Done. "
+        #     f"Documents existing now: {collection.count_documents({})}"
+        # )
 
 
 def id_factory(value: int = 0, step: int = 1):

@@ -12,9 +12,9 @@ CONN_STR = os.environ.get("CONNSTR")  # CLUSTER CONNECTION STRING (console comma
 
 REQUESTS = 1000  # TOTAL NUMBER OF REQUESTS SENT TO DB
 CONCURRENCY = 10  # MAX CONCURRENT REQUESTS (macs die past 30)
-DOCS_PER_REQUEST = 1000  # DOCS TO INSERT PER REQUEST
+DOCS_PER_REQUEST = 10  # DOCS TO INSERT PER REQUEST
 TARGET_DB = "test"  # DB TO SPAM
-TARGET_COLL = "test"  # COLLECTION TO SPAM
+TARGET_COLL = "testCollection"  # COLLECTION TO SPAM
 DROP = True  # DROP COLLECTION BEFORE SPAM
 LOG_COLL = False  # CREATE COLLECTION LOGGING THE SPAM PROCESS
 FORK_CLIENT = False  # DEFINE CLIENT BEFORE FORKING PROCESS - SHOULD SEE WARNING IF TRUE
@@ -63,8 +63,6 @@ def insert(i):
     else:
         collection = get_collection()
 
-    res = collection.aggregate()
-
     if LOG_COLL:
         global LOG_COLL_NAME
         if not LOG_COLL_NAME:
@@ -83,6 +81,15 @@ def insert(i):
         id_val = next(id_1)
         dd = datetime(randint(2019, 2021), randint(1, 12), randint(1, 28), randint(0, 23), randint(0, 59),
                       randint(0, 59))
+
+        doc_arr = list()
+        for n in range(randint(2, 5)):
+            t = randint(65, 88)
+            doc_arr.append({
+                "in_id": n + 1,
+                "str_id": f"identifier{n + 1}",
+                "type": f"{chr(t)}{chr(t + 1)}{chr(t + 2)}"
+            })
 
         docs.append(
             {
@@ -108,6 +115,9 @@ def insert(i):
                 "status": choice(["created", "claimed", "other"]),
                 "score": randint(1, 100),
                 "source": f"source_{randint(1, 3)}",
+                "nest_obj": {
+                    "obj_arr": doc_arr
+                },
                 "internal": {
                     "iteration": i,
                     "internal_id": d_id,
