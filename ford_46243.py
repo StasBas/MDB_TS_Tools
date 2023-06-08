@@ -1,5 +1,5 @@
 import pymongo
-# import certifi
+import certifi
 # import bson
 # from pymongo.errors import DocumentTooLarge, WriteError
 import multiprocessing
@@ -9,16 +9,17 @@ from faker import Faker
 from random import randint, choice
 from uuid import uuid4
 
-CONN_STR = "mongodb://localhost:5000"
-REQUESTS = 100  # REQUESTS (will affect duration)
-CONCURRENCY = 15  # MAX CONCURRENCY (macs die past 30)
+CONN_STR = "mongodb://localhost:5070"
+# CONN_STR = os.environ.get("CONNSTR")
+REQUESTS = 10000  # REQUESTS (will affect duration)
+CONCURRENCY = 20  # MAX CONCURRENCY (macs die past 30)
 DOCS_PER_REQUEST = 1000  # DOCS TO INSERT PER REQUEST
 TARGET_DB = "test"  # DB TO SPAM
 TARGET_COLL = "test"  # COLLECTION TO SPAM
-DROP = True  # DROP COLLECTION BEFORE SPAM
+DROP = False  # DROP COLLECTION BEFORE SPAM
 FAKE = Faker()
 CLIENT = None
-LOG_COLL = False
+LOG_COLL = True
 LOG_COLL_NAME = None
 FORK_CLIENT = False
 
@@ -39,6 +40,7 @@ def main():
 
 def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, docs_threshold=0):
     client = pymongo.MongoClient(CONN_STR)
+    # client = pymongo.MongoClient(CONN_STR, ssl_ca_certs=certifi.where())
     db = client[db_name]
     collection = db[collection_name]
     if collection.estimated_document_count() > docs_threshold:
@@ -167,6 +169,7 @@ def get_client():
     global CLIENT
     if not CLIENT:
         CLIENT = pymongo.MongoClient(CONN_STR)
+        # CLIENT = pymongo.MongoClient(CONN_STR, ssl_ca_certs=certifi.where())
     return CLIENT
 
 
