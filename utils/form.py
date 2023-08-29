@@ -13,10 +13,7 @@ class FormTemplate(object):
         self.canvas = tk.Canvas(self.root, width=sizex, height=sizey)
         self.main_frame = tk.Frame(self.root)
         self.bottom_frame = tk.Frame(self.root)
-
         self.top_frame.pack()
-
-        # Make scrollbars bound to root and scrolling form canvas
         h_bar = tk.Scrollbar(self.root, orient=tk.HORIZONTAL)
         h_bar.pack(side=tk.BOTTOM, fill=tk.X)
         h_bar.config(command=self.canvas.xview)
@@ -24,26 +21,20 @@ class FormTemplate(object):
         v_bar.pack(side=tk.RIGHT, fill=tk.Y)
         v_bar.config(command=self.canvas.yview)
         self.canvas.configure(xscrollcommand=h_bar.set, yscrollcommand=v_bar.set)
-
-        # Position Canvas and Form frame
         self.canvas.pack(anchor=tk.NW)
         self.canvas.create_window(0.015 * sizex, 0.1 * sizey, window=self.main_frame, anchor=tk.NW)
         self.canvas.bind("<Configure>", lambda event: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
 
         if title:
             self.add_title(title)
-
         # Place buttons frame
         self.bottom_frame.pack(anchor=tk.SE, expand=0)  # , fill=tk.Y, expand=True)
-
         self.run_button = None
         if run_button_name or run_button_action:
             self.run_button = self.set_action_button(run_button_action, run_button_name)
         else:
             self.run_button = self.set_action_button("Run", None)
-
         self.add_button("Exit", button_action=lambda: self.root.destroy(), side=tk.LEFT)
-
         self.root.bind('<Escape>', lambda event: self.root.destroy())
 
     def open(self):

@@ -71,6 +71,8 @@ missing module named 'setuptools.extern.packaging.specifiers' - imported by setu
 missing module named 'setuptools.extern.packaging.markers' - imported by setuptools.config.setupcfg (top-level)
 missing module named 'setuptools.extern.packaging.requirements' - imported by setuptools.config.setupcfg (top-level), setuptools._reqs (top-level)
 missing module named importlib_metadata - imported by attr (delayed, conditional), setuptools._importlib (delayed, optional)
+missing module named multiprocessing.Queue - imported by multiprocessing (top-level), /Users/stas.baskin/repos/scripts/py/Experiment/mongodb_experiment/populate_mongo_db.py (top-level)
+missing module named multiprocessing.Process - imported by multiprocessing (top-level), /Users/stas.baskin/repos/scripts/py/Experiment/mongodb_experiment/populate_mongo_db.py (top-level)
 missing module named xmltodict - imported by faker.providers.misc (delayed, optional)
 missing module named 'PIL.ImageDraw' - imported by faker.providers.misc (delayed, optional)
 missing module named PIL - imported by faker.providers.misc (delayed, optional)
