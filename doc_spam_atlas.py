@@ -41,7 +41,7 @@ def main():
 
 def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, split=SPLIT_COLLECTIONS,
                                 docs_threshold=0):
-    client = pymongo.MongoClient(CONN_STR, tls_ca_certs=certifi.where())
+    client = pymongo.MongoClient(CONN_STR, tlsCAFile=certifi.where())
     db = client[db_name]
     collections = []
     if split:
@@ -154,7 +154,7 @@ def id_factory(value: int = 0, step: int = 1):
 def get_client():
     global CLIENT
     if not CLIENT:
-        CLIENT = pymongo.MongoClient(CONN_STR, tls_ca_certs=certifi.where())
+        CLIENT = pymongo.MongoClient(CONN_STR, tlsCAFile=certifi.where())
     return CLIENT
 
 

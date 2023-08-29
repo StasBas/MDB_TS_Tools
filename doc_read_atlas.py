@@ -15,7 +15,7 @@ TARGET_COLL = "test"
 
 def main():
     client = pymongo.MongoClient(f"mongodb+srv://{DB_USER}:{DB_PASS}@{CLUSTER}?retryWrites=true&w=majority",
-                                 ssl_ca_certs=certifi.where())
+                                 tlsCAFile=certifi.where())
     database = client[TARGET_DB]
     collection = database[TARGET_COLL]
 
