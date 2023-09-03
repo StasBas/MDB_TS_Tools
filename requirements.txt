@@ -1,4 +1,4 @@
-pymongo==4.3.3
+pymongo
 certifi
 faker
 pymongocrypt
