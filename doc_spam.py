@@ -24,12 +24,13 @@ CONN_STR = "mongodb://localhost:27017"
 
 # EXECUTION
 ITERATIONS = 100  # REQUESTS (will affect duration)
-CONCURRENCY = 10  # MAX CONCURRENCY (macs die past 30)
+CONCURRENCY = os.cpu_count()  # MAX WORKERS
 DOCS_COUNT = 1000  # DOCS TO INSERT PER REQUEST
 TARGET_DB = "test"  # DB TO SPAM
 TARGET_COLL = "test"  # COLLECTION TO SPAM
 DROP = True  # DROP COLLECTION BEFORE SPAM
 SAMPLE_DOC_PATH = None  # "~/Documents/multiDoc.json"  # PATH TO SAMPLE DOCUMENT
+BULK = False  # Use bulk insertOne instead of insertMany
 
 # AUTH
 USERNAME = "stas"
@@ -47,23 +48,6 @@ CLIENT = None
 
 
 def main():
-    # usage = """Usage: <ToolName> [-h] [-c CONNECTION_STRING] [-db DATABASE]
-    #               [-coll COLLECTION] [-i ITERATIONS]
-    #               [-dc DOCS_COUNT] [-w CONCURRENCY] [-drop DROP]
-    #               [-u USERNAME] [-p PASSWORD] [-tls TLS]"""
-    # print(f"\r{usage}\n")
-    #
-    # translation = """If using document sample, use the following field values to generate random data.
-    #     "setText()",
-    #     "setNumber(<MIN>,<MAX>)",
-    #     "setBool()",
-    #     "setTextArray(<SIZE>)",
-    #     "setNumArray(<SIZE>)",
-    #     "setDoc(<SIZE>)",
-    #     "setDate()"
-    #     """
-    # print(f"\r{translation}\n")
-
     # Read Params
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', "--connection_string", help=f"Connection String. ex: \"mongodb://localhost:5000\"",
@@ -84,6 +68,8 @@ def main():
                         default=get_value(SAMPLE_DOC_PATH))
     parser.add_argument('-drop', "--drop", help=f"Drop target database. (1/0)", type=bool,
                         default=DROP.get() if isinstance(DROP, tk.BooleanVar) else DROP)
+    parser.add_argument('-b', "--bulk", help=f"Use Bulk insertOne instead of insertMany (1/0)", type=bool,
+                        default=BULK)
 
     parser.add_argument('-u', "--username", help=f"Atlas username",
                         default=get_value(USERNAME))
@@ -95,7 +81,7 @@ def main():
 
     if not args.connection_string:
         print(f"To run without UI provide \"CONNECTION_STRING\" parameter in CLI.\n")
-        ui_main().mainloop()
+        form().mainloop()
     else:
         populate_db(**vars(args))
 
@@ -113,6 +99,18 @@ def populate_db(*args, **kwargs):
     if args:
         print(args)
     print("\n")
+
+    if kwargs['sample']:
+        translation = """If using document sample, use the following field values to generate random data.
+            "setText()",
+            "setNumber(<MIN>,<MAX>)",
+            "setBool()",
+            "setTextArray(<SIZE>)",
+            "setNumArray(<SIZE>)",
+            "setDoc(<SIZE>)",
+            "setDate()"
+            """
+        print(f"\r{translation}\n")
 
     # Params Post Process
     kwargs['connection_string'] = kwargs['connection_string']. \
@@ -159,12 +157,12 @@ def populate_db(*args, **kwargs):
 
     # Execution Start
     ot = Thread(target=task_progress_output,
-                args=(kwargs['collection'], kwargs['database'], client_params, qin, procs, done, client, ))
+                args=(kwargs['collection'], kwargs['database'], client_params, qin, procs, done, client,))
     ot.start()
 
     for i in range(min(kwargs['iterations'], kwargs['concurrency'])):
         try:
-            p = Process(target=populate_db_insert_task, args=(i, qin, done_prep, ), daemon=True)
+            p = Process(target=populate_db_insert_task, args=(i, qin, done_prep, kwargs.get('bulk')), daemon=True)
             p.start()
             procs.append(p)
         except RuntimeError:
@@ -247,7 +245,7 @@ def count_collection_documents(collection, database, client_params):
 
 
 def populate_db_insert_task(*args):
-    worker_id, qin, prep_event = args
+    worker_id, qin, prep_event, bulk = args
     worker_name = f"worker-{worker_id}"
     logging.info(f"\n{worker_name} starting.")
 
@@ -279,13 +277,23 @@ def populate_db_insert_task(*args):
 
         for j in range(docs_count):
             if sample_doc_path:
-                docs.append(load_doc(sample_doc_path))
+                if bulk:
+                    docs.append(pymongo.InsertOne(load_doc(sample_doc_path)))
+                else:
+                    docs.append(load_doc(sample_doc_path))
             else:
                 d_id = next(id_2)
                 id_val = next(id_1)
-                docs.append(get_doc(id_val, d_id, iteration))
+                if bulk:
+                    docs.append(pymongo.InsertOne(get_doc(id_val, d_id, iteration)))
+                else:
+                    docs.append(get_doc(id_val, d_id, iteration))
 
-        resp = collection.insert_many(docs)
+        if bulk:
+            resp = collection.bulk_write(docs)
+        else:
+            resp = collection.insert_many(docs)
+
         if not resp.acknowledged:
             print(
                 f"{datetime.now().strftime('[%Y-%m-%dT%H:%M:%S]')} {worker_name}: "
@@ -460,7 +468,7 @@ def get_collection(db_name=None, coll_name=None, connection_params=None, client=
     return collection
 
 
-def ui_main():
+def form():
     root = tk.Tk()
     root.resizable(False, False)
     root.title("Populate MongoDB")
@@ -534,15 +542,7 @@ def ui_main():
     concurrency.set(os.cpu_count())
     tk.Entry(main_frame, textvariable=concurrency).grid(row=60, column=20, sticky=tk.W)
     text = "Concurrent Workers. Keep within range of CPU cores. Values exceeding CPU cores may result in " \
-           "bottlenecks, slow response times and your cat or workstation spontaneously combusting. " \
-           "But seriously, using more workers than CPU cores is pointless because it is equivalent to" \
-           "telling an angry girlfriend to calm down, she is angry she cannot be both angry and calm at the same " \
-           "time as such she will only do of the things at any given moment. " \
-           "The only difference between the girlfriend and a CPU core is that you" \
-           "can definitely know which of the things a girlfriend will do, with what object and to what part of your " \
-           "body. While with the CPU cores it will prioritize the workers by a random clock wait time and switch " \
-           "between them as they progress thus possibly taking even longer to complete than if there was a single" \
-           "worker per core."
+           "bottlenecks, slow response times and your cat or workstation spontaneously combusting. "
     tk.Label(main_frame, text=text).grid(row=60, column=30, sticky=tk.W)
 
     tk.Label(main_frame, text="Sample document path: ").grid(row=69, column=10, sticky=tk.W)
@@ -557,6 +557,13 @@ def ui_main():
     tk.Checkbutton(main_frame, text='', variable=drop, onvalue=1, offvalue=0).grid(row=70, column=20, sticky="w")
     text = "Drop the collection before starting If collection with the chosen collection name exists."
     tk.Label(main_frame, text=text).grid(row=70, column=30, sticky=tk.W)
+
+    tk.Label(main_frame, text="Use Bulk Writes: ").grid(row=71, column=10, sticky=tk.W)
+    bulk = tk.BooleanVar()
+    bulk.set(False)
+    tk.Checkbutton(main_frame, text='', variable=bulk, onvalue=1, offvalue=0).grid(row=71, column=20, sticky="w")
+    text = "Use Bulk insertOne operations instead of insertMany batches."
+    tk.Label(main_frame, text=text).grid(row=71, column=30, sticky=tk.W)
 
     ttk.Separator(main_frame, orient='horizontal').grid(row=75, columnspan=100, sticky=tk.EW, pady=5)
 
@@ -627,7 +634,8 @@ def ui_main():
         username=username.get(),
         password=password.get(),
         tls=tls.get(),
-        formConfig=True)
+        formConfig=True,
+        bulk=bulk)
            )
     tk.Button(buttons_frame, text="Execute", command=cmd).pack(side="right")
     tk.Button(buttons_frame, text="Exit", command=lambda: close_window(root)).pack(side='right')
@@ -652,5 +660,5 @@ def check_params(*args, **kwargs):
 
 
 if __name__ == "__main__":
-    freeze_support()  # HOLY ****!
+    freeze_support()  # HOLY MOTHER OF FUCK!
     main()
