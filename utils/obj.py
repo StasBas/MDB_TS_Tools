@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import ttk
 
 
 class FormTemplate:
@@ -87,9 +88,9 @@ class FormTemplate:
     \nUse <object>.set_action_button(name, lambda: func(args))
     \rUse <object>.add_title("Title") for title
     \rUse <object>.add_wellcome_message("Message", side=None) for top message
-    \rUse str_param = form.add_text_field(name="name", default="default", info="info")
-    \rUse int_param = form.add_int_field(name="name", default=1, info="info")
-    \rUse bool_param = form.add_bool_field(name="name", default=True, info="info")
+    \rUse str_param = <object>.add_text_field(name="name", default="default", info="info")
+    \rUse int_param = <object>.add_int_field(name="name", default=1, info="info")
+    \rUse bool_param = <object>.add_bool_field(name="name", default=True, info="info")
     """
 
         action = action or (lambda x=text: print(x))
@@ -97,6 +98,10 @@ class FormTemplate:
         b = self.add_button(button_text, button_action=action, side=tk.RIGHT)
         self.root.bind('<Return>', lambda event: action())
         return b
+
+    def add_separator(self):
+        ttk.Separator(self.main_frame, orient='horizontal').grid(row=self.row, columnspan=100, sticky=tk.EW, pady=5)
+        self.row += 10
 
 
 class TestForm(object):
