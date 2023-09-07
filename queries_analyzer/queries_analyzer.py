@@ -17,11 +17,14 @@ TIME_S = "1970-01-01T00:00:00"
 TIME_E = "2830-01-01T00:00:00"
 DECODER_ERR_MAX = 100
 MAX_PRINT = 10
+MAX_EXAMPLES = 3
 
 SEARCH_TERMS = ""
 SEARCH = ""
 RATIO = True
 DURATION = True
+
+REPORTS_PATH = ""
 
 
 def main():
@@ -34,8 +37,13 @@ def main():
                         required=False, default=TIME_E)
     parser.add_argument('-l', "--error_limit", help=f"Error limit. ex: 100", type=int,
                         required=False, default=DECODER_ERR_MAX)
-    parser.add_argument('-pl', "--max_print", help=f"Error limit. ex: 100", type=int,
+    parser.add_argument('-pl', "--max_print", help=f"Print top N results. ex: 100", type=int,
                         required=False, default=MAX_PRINT)
+    parser.add_argument('-el', "--max_examples", help=f"Print up to N examples from log. ex: 100", type=int,
+                        required=False, default=MAX_EXAMPLES)
+    parser.add_argument('-op', "--output_path", help=f"If provided, will save report in files at path. "
+                                                     f"ex: ~/Documents/QueriesReports",
+                        required=False, default=REPORTS_PATH)
     parser.add_argument('-st', "--search_terms", help=f"Comma separated search terms. ex:\"COLLSCAN,hasSortStage\"",
                         required=False, default=SEARCH_TERMS)
     parser.add_argument('-fs', "--search", help=f"Full search. All terms must be in line. Terms starting with \"-\""
@@ -50,9 +58,6 @@ def main():
     if args.path and os.path.sep not in args.path:
         args.path = os.path.join(os.getcwd(), args.path)
 
-    print("CLI usage: queries_analyzer [-h] [-p PATH] [-s START_TIME] [-r END_TIME] [-l ERROR_LIMIT] [-pl MAX_PRINT] "
-          "[-st SEARCH_TERMS] [-fs SEARCH] [-ratio RATIO] [-duration DURATION]")
-
     if args.path:
         analyzer(**vars(args))
     else:
@@ -60,23 +65,19 @@ def main():
 
 
 def form():
-    root = FormTemplate()
+    root = FormTemplate(500, 350)
     root.add_title("Log Analyzer")
     root.add_wellcome_message("Queries Analyzer")
 
-    log_path = root.add_text_field(name="Log File Path", default="~/Downloads/mongodb.log", info="Path to log file")
+    log_path = root.add_text_field(name="Log File", default="~/Downloads/mongodb.log", info="Path to log file")
     start_time = root.add_text_field(name="Start Time", default="1970-01-01T00:00:00", info="Start time")
     end_time = root.add_text_field(name="End Tme", default="2830-01-01T00:00:00", info="End time")
     decoder_error_limit = root.add_num_field(name="Decoder Error Limit", default=100, info="Max allowed decoder errors")
-    max_print = root.add_num_field(name="Max print length", default=10, info="Max lines to print per report")
+    max_print = root.add_num_field(name="Top N results to print", default=10, info="Max combined results to print")
+    output_path = root.add_text_field(name="Output Path", default="", info="If provided, will save reports in path")
 
     root.add_separator()
-    search_terms = root.add_text_field(name="Single Search Terms",
-                                       default="COLLSCAN,hasSortStage,writeConflicts,regex",
-
-
-
-
+    search_terms = root.add_text_field(name="Single Search Terms", default="",
                                        info="Comma separated terms to scan the log for. No Spaces. "
                                             "Checks log for each term separately. Leave empty to skip")
     search = root.add_text_field(name="Full Search Terms",
@@ -84,6 +85,8 @@ def form():
                                  info="Comma separated search words to look for in log. No Spaces. Checks the log for"
                                       "all search terms to be present. Leave empty to skip"
                                       "Terms starting with \"-\" must not be in line")
+    max_examples = root.add_num_field(name="Log examples to print", default=1, info="Max log examples to print")
+
     ratio = root.add_bool_field(name="Do Ratio Analysis", default=False, info="Include Ratio Analysis")
     duration = root.add_bool_field(name="Do Slow Ops Analysis", default=False,
                                    info="Show slowest running ops grouped by query shape")
@@ -96,8 +99,10 @@ def form():
             end_time=end_time.get(),
             error_limit=decoder_error_limit.get(),
             max_print=max_print.get(),
+            output_path=output_path.get(),
             search_terms=search_terms.get(),
             search=search.get(),
+            max_examples=max_examples.get(),
             ratio=ratio.get(),
             duration=duration.get(),
             # include=include.get()
@@ -127,17 +132,19 @@ def analyzer(*args, **kwargs):
         start_time=kwargs['start_time'],
         end_time=kwargs['end_time'],
         max_print=kwargs['max_print'],
+        max_examples=kwargs.get('max_examples'),
         search_terms=search_terms,
         ratio=kwargs['ratio'],
         ratio_threshold=kwargs.get('ratio_threshold') or 1000,
         duration=kwargs.get('duration'),
         search=search,
+        output_path=kwargs.get('output_path'),
     )
 
 
 def analyzer_main_task(path, start_time, end_time, search_terms: list, search: list,
-                       err_limit: int = 100, max_print: int = 10, ratio: bool = False,
-                       ratio_threshold=1000, duration: bool = True):
+                       err_limit: int = 100, max_print: int = 10, max_examples: int = 10, ratio: bool = False,
+                       ratio_threshold=1000, duration: bool = True, output_path: str = None):
     try:
         with open(path) as f:
             print(f"Reading \'{path}\'")
@@ -147,6 +154,7 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
 
     min_ts = None
     max_ts = None
+    thread_lists = []
 
     # Search Terms Report
     search_terms_report = dict()
@@ -158,6 +166,7 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
                 'query_shapes': list()
             }
     st_threads = []
+    thread_lists.append(st_threads)
 
     # Search Report
     fs_report = {
@@ -166,6 +175,7 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
         'query_shapes': list()
     }
     fs_threads = []
+    thread_lists.append(fs_threads)
     search_include, search_exclude = list(), list()
     if search:
         for st in search:
@@ -177,23 +187,25 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
     # Ratio Report
     ratio_report = list()
     ratio_threads = []
+    thread_lists.append(ratio_threads)
 
     # Duration Report
     duration_report = list()
     duration_threads = []
+    thread_lists.append(duration_threads)
 
     # Process Line
     exec_start = time.time()
-    i = 0
+
     json_decoder_errors_counter = 0
     print(f"Parsing log")
-    for line in log_file:
+    for eline in enumerate(log_file):
+        i, line = eline
         print_progress_bar(i + 1, len(log_file), length=30,
                            suffix=f"Report Threads: Terms({len(st_threads)}), "
                                   f"Ratio({len(ratio_threads)}), "
                                   f"SlowOps({len(duration_threads)}) "
                                   f"Search({len(fs_threads)})")
-        i += 1
 
         # Log line to JSON (structured log)
         try:
@@ -293,14 +305,9 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
         # /Process Log Line
 
     # Join them worker bees
-    for t in st_threads:
-        t.join(20)
-    for t in ratio_threads:
-        t.join(20)
-    for t in duration_threads:
-        t.join(20)
-    for t in fs_threads:
-        t.join(20)
+    for tl in thread_lists:
+        for t in tl:
+            t.join(10)
     exec_duration = round(time.time() - exec_start, 2)
 
     ##########
@@ -311,83 +318,84 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
     ######################
     # Search Term report #
     ######################
+
     if search_terms:
-        search_terms_output = list()
-        search_terms_output.append(f"\n{'*' * 23}\n* Search Terms Report *\n{'*' * 23}\n")
+        search_terms_output = ""
+        search_terms_output += f"\n{'*' * 23}\n* Search Terms Report *\n{'*' * 23}\n"
 
         for k, v in search_terms_report.items():
-            search_terms_output.append(f"\nSearch Term \"{k}\" yielded {len(v['examples'])} results.")
+            search_terms_output += f"\nSearch Term \"{k}\" yielded {len(v['examples'])} results."
             # Namespaces
-            search_terms_output.append(f"\tTop {max_print} NameSpaces (out of {len(v['ns'])}):")
+            search_terms_output += f"\n\n\tTop {max_print} NameSpaces (out of {len(v['ns'])}):"
             for ns, count in dict(sorted(v['ns'].items(), key=lambda x: x[1], reverse=True)[:max_print]).items():
-                search_terms_output.append(f"\t\t{ns}: {count}")
+                search_terms_output += f"\n\t\t{ns}: {count}"
             # Query Shapes
-            search_terms_output.append(f"\tTop {max_print} Query Shapes (out of {len(v['query_shapes'])}):")
+            search_terms_output += f"\n\n\tTop {max_print} Query Shapes (out of {len(v['query_shapes'])}):"
             for fs in sorted(v['query_shapes'], key=lambda x: x['count'], reverse=True)[:max_print]:
-                search_terms_output.append(f"\t\t{json.dumps(fs)}")
+                search_terms_output += f"\n\t\t{json.dumps(fs)}"
             # Example Queries
-            search_terms_output.append(f"\tExamples ({len(v['examples'])}):")
-            if len(v['examples']) > 0:
-                if len(v['examples']) > (max_print * 10):
-                    for i in range(min(max_print, len(v['examples']))):
-                        ex = (v['examples'][randint(0, len(v['examples']) - 1)]).replace('\n', '')
-                        search_terms_output.append(f"{ex}")
-                else:
-                    for example in v['examples'][:max_print]:
-                        search_terms_output.append(example.replace("\n", ''))
-        for i in search_terms_output:
-            print(i)
+            if max_examples:
+                search_terms_output += f"\n\n\tExamples ({len(v['examples'])}):"
+                for example in v['examples'][:max_examples]:
+                    search_terms_output += f"\n" + example.replace('\n', '')
+            search_terms_output += f"\n\n{'-' * 50}\n"
+
+        print(search_terms_output)
+        dump_to_file(output_path, "searchTermsReport.txt", search_terms_output)
 
     #################
     # SEARCH REPORT #
     #################
     if search:
-        search_output = list()
-        search_output.append(f"\n{'*' * 18}\n* Search Results *\n{'*' * 18}\n")
-        search_output.append(f"{search}")
-
-        search_output.append(f"\n\tTop {max_print} NameSpaces (out of {len(fs_report['ns'])}):")
+        search_output = ""
+        search_output += f"\n{'*' * 18}\n* Search Results *\n{'*' * 18}\n\n"
+        search_output += f"Search: {search}\n"
+        search_output += f"\n\tTop {max_print} NameSpaces (out of {len(fs_report['ns'])}):\n"
         for ns, count in dict(sorted(fs_report['ns'].items(), key=lambda x: x[1], reverse=True)[:max_print]).items():
-            search_output.append(f"\t\t{ns}: {count}")
-
-        search_output.append(f"\n\tTop {max_print} Query Shapes (out of {len(fs_report['query_shapes'])}):")
+            search_output += f"\t\t{ns}: {count}\n"
+        search_output += f"\n\tTop {max_print} Query Shapes (out of {len(fs_report['query_shapes'])}):\n"
         for qs in sorted(fs_report['query_shapes'], key=lambda x: x['count'], reverse=True)[:max_print]:
             for k, v in qs.items():
-                search_output.append(f"\t\t{k}: {v}")
-            search_output.append("")
-            # search_output.append(f"\t\t{json.dumps(qs)}")
+                search_output += f"\t\t{k}: {v}\n"
+            search_output += "\n"
+        if max_examples:
+            search_output += f"\n\tExamples ({len(fs_report['examples'])}):\n"
+            for example in fs_report['examples'][:max_examples]:
+                search_output += example  # .replace("\n", '')
 
-        search_output.append(f"\n\tExamples ({len(fs_report['examples'])}):")
-        for example in fs_report['examples'][:max_print]:
-            search_output.append(example.replace("\n", ''))
-        for i in search_output:
-            print(i)
+        print(search_output)
+        dump_to_file(output_path, "searchReport.txt", search_output)
+        print(f"\n{'-' * 50}\n")
 
     ################
     # RATIO REPORT #
     ################
     if ratio:
-        ratio_output = list()
-        ratio_output.append(f"\n{'*' * 16}\n* Ratio Report *\n{'*' * 16}\n")
-        ratio_output.append(f"Showing {max_print} worst ratios grouped by query shape.\n")
-        for i in sorted(ratio_report, key=lambda x: x['Ratio'], reverse=True)[:max_print]:
-            for k, v in i.items():
-                ratio_output.append(f"\t{k}: {v}")
-        for i in ratio_output:
-            print(i)
+        ratio_output = ""
+        ratio_output += f"\n{'*' * 16}\n* Ratio Report *\n{'*' * 16}\n\n"
+        ratio_output += f"Showing {max_print} worst ratios grouped by query shape.\n"
+        for i in enumerate(sorted(ratio_report, key=lambda x: x['Ratio'], reverse=True)[:max_print]):
+            ratio_output += f"\nNumber {i[0]+1}.\n"
+            for k, v in i[1].items():
+                ratio_output += f"\t{k}: {v}\n"
+        print(ratio_output)
+        dump_to_file(output_path, "ratiosReport.txt", ratio_output)
+        print(f"\n{'-' * 50}\n")
 
     ###################
     # Duration Report #
     ###################
     if duration:
-        duration_output = list()
-        duration_output.append(f"\n{'*' * 19}\n* Duration Report *\n{'*' * 19}\n")
-        duration_output.append(f"Showing {max_print} longest running query shapes.\n")
-        for i in sorted(duration_report, key=lambda x: x['durationMillis'], reverse=True)[:max_print]:
-            for k, v in i.items():
-                duration_output.append(f"\t{k}: {v}")
-        for i in duration_output:
-            print(i)
+        duration_output = ""
+        duration_output += f"\n{'*' * 19}\n* Duration Report *\n{'*' * 19}\n\n"
+        duration_output += f"Showing {max_print} longest running query shapes.\n"
+        for i in enumerate(sorted(duration_report, key=lambda x: x['durationMillis'], reverse=True)[:max_print]):
+            duration_output += f"\nNumber {i[0]+1}.\n"
+            for k, v in i[1].items():
+                duration_output += f"\t{k}: {v}\n"
+        print(duration_output)
+        dump_to_file(output_path, "durationReport.txt", duration_output)
+        print(f"\n{'-' * 50}\n")
 
 
 def task_search_term_analysis(search_terms, line, rep, line_json, ):
@@ -412,6 +420,8 @@ def task_search_term_analysis(search_terms, line, rep, line_json, ):
                 for qd in rep[term]['query_shapes']:
                     if qd['filter'] == query_details['filter'] \
                             and qd['type'] == query_details['type']:
+                        if qd.get('writeConflicts') and query_details.get('writeConflicts'):
+                            qd['writeConflicts'] = max(query_details['writeConflicts'], qd['writeConflicts'])
                         qd['count'] += 1
                         found = 1
                 if not found:
@@ -440,6 +450,8 @@ def task_search_analysis(include: list, exclude: list, line: str, line_json: dic
                     and qd['type'] == query_details['type'] \
                     and qd['ns'] == query_details['ns']:
                 qd['count'] += 1
+                if qd.get('writeConflicts') and query_details.get('writeConflicts'):
+                    qd['writeConflicts'] = max(query_details['writeConflicts'], qd['writeConflicts'])
                 found = 1
         if not found:
             query_details['count'] = 1
@@ -470,7 +482,7 @@ def task_ratio_analysis(ratio_report: list, line: str, line_json: dict, ratio_th
                     i['docsExamined'] = scanned
                     i["nreturned"] = returned
                     i["keysExamined"] = keys
-                    i['example'] = line
+                    i['example'] = line.replace('\n', '')
                 i['count'] += 1
         if not found:
             ratio_report.append(
@@ -483,7 +495,7 @@ def task_ratio_analysis(ratio_report: list, line: str, line_json: dict, ratio_th
                     "nreturned": returned,
                     "keysExamined": keys,
                     "planSummary": plan,
-                    "example": line
+                    "example": line.replace('\n', '')
                 }
             )
 
@@ -503,7 +515,7 @@ def task_duration_analysis(duration_report: list, line: str, line_json: dict):
                 if i['durationMillis'] < duration:
                     i['durationMillis'] = duration
                     i['planSummary'] = plan
-                    i['example'] = line
+                    i['example'] = line.replace('\n', '')
                 i['count'] += 1
         if not found:
             duration_report.append(
@@ -513,9 +525,23 @@ def task_duration_analysis(duration_report: list, line: str, line_json: dict):
                     "query_shape": shape,
                     "ns": ns,
                     "planSummary": plan,
-                    "example": line
+                    "example": line.replace('\n', '')
                 }
             )
+
+
+def dump_to_file(path: str, filename: str, report: str):
+    if path:
+        path = path.replace('~', os.path.expanduser('~'))
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+        file_path = os.path.join(path, filename)
+
+        report_file = open(file_path, 'w')
+        report_file.write(report)
+        report_file.flush()
+        report_file.close()
 
 
 def util_get_query_details(line_json, ns, line):
@@ -562,7 +588,6 @@ def util_get_query_details(line_json, ns, line):
         # UPDATE
         elif qtype == "update":
             if line_json["attr"].get('command') and line_json["attr"]['command'].get('q'):
-
                 qfilter = line_json["attr"]["command"].get("q")
                 qsort = line_json['attr']['command'].get('sort')
                 qupdate = line_json['attr']['command'].get('u')

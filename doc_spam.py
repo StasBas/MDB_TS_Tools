@@ -660,5 +660,5 @@ def check_params(*args, **kwargs):
 
 
 if __name__ == "__main__":
-    freeze_support()  # HOLY MOTHER OF FUCK!
+    freeze_support()
     main()

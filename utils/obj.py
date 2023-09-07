@@ -69,6 +69,10 @@ class FormTemplate:
         self.row += 10
         return var
 
+    def add_separator(self):
+        ttk.Separator(self.main_frame, orient='horizontal').grid(row=self.row, columnspan=100, sticky=tk.EW, pady=5)
+        self.row += 10
+
     def add_button(self, button_name="Button", button_action=None, side=None):
         b = tk.Button(self.bottom_frame, text=button_name, command=button_action)
         b.pack(side=side)
@@ -99,10 +103,6 @@ class FormTemplate:
         self.root.bind('<Return>', lambda event: action())
         return b
 
-    def add_separator(self):
-        ttk.Separator(self.main_frame, orient='horizontal').grid(row=self.row, columnspan=100, sticky=tk.EW, pady=5)
-        self.row += 10
-
 
 class TestForm(object):
 
@@ -128,7 +128,7 @@ class TestForm(object):
         form2.add_wellcome_message("Second wellcome message", side=tk.LEFT)
 
         form2.set_action_button("Test Action", lambda: self.action_print("Test Action Button Pressed"))
-        form2.add_button("non run button2", lambda: self.action_print("non run button3 pressed"), side=tk.LEFT)
+        form2.add_button("non run button2", lambda: self.action_print("non run button2 pressed"), side=tk.LEFT)
         form2.add_button("non run button3", lambda: self.action_print("non run button3 pressed"), side=tk.LEFT)
 
         params = dict()
@@ -149,7 +149,7 @@ class TestForm(object):
 
 
 def main():
-    pass
+    test_form()
 
 
 def test_form():

@@ -14,9 +14,7 @@ def date_to_string(date_obj: datetime, date_format=DATE_FORMAT) -> str:
 def devalue_json(valued_json):
     if not valued_json:
         return valued_json
-
     filter_shape = None
-
     if isinstance(valued_json, dict):
         filter_shape = dict()
         for k, v in valued_json.items():
@@ -24,7 +22,6 @@ def devalue_json(valued_json):
                 filter_shape[k] = devalue_json(v)
             else:
                 filter_shape[k] = '###'
-
     elif isinstance(valued_json, list):
         if len(valued_json) > 0:
             filter_shape = list()
@@ -35,7 +32,6 @@ def devalue_json(valued_json):
                     filter_shape.append(devalue_json(i))
         else:
             filter_shape = []
-
     return filter_shape
 
 
