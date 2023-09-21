@@ -39,7 +39,7 @@ def main():
 
 
 def drop_collection_if_has_docs(db_name=TARGET_DB, collection_name=TARGET_COLL, docs_threshold=0):
-    client = pymongo.MongoClient(CONN_STR)
+    client = pymongo.MongoClimax_examplesent(CONN_STR)
     # client = pymongo.MongoClient(CONN_STR, ssl_ca_certs=certifi.where())
     db = client[db_name]
     collection = db[collection_name]
