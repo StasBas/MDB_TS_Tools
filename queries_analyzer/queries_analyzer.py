@@ -8,8 +8,8 @@ from random import randint
 from threading import Thread
 from multiprocessing import Event, Queue
 
-from utils.obj import FormTemplate
-from utils.ops import print_progress_bar, date_from_string, devalue_json
+from Experiment.mongodb_experiment.util.analysis_form import FormTemplate
+from Experiment.mongodb_experiment.util.utils import print_progress_bar, date_from_string, get_mongo_filter_shape
 
 PATH = None
 # PATH = "~/Downloads/sampleLog.log"
@@ -17,6 +17,8 @@ TIME_S = "1970-01-01T00:00:00"
 TIME_E = "2830-01-01T00:00:00"
 DECODER_ERR_MAX = 100
 MAX_PRINT = 10
+MAX_LOG_PRINT = 1
+OUTPUT_PATH = "~/Documents/reports"
 
 SEARCH_TERMS = ""
 SEARCH = ""
@@ -34,24 +36,29 @@ def main():
                         required=False, default=TIME_E)
     parser.add_argument('-l', "--error_limit", help=f"Error limit. ex: 100", type=int,
                         required=False, default=DECODER_ERR_MAX)
-    parser.add_argument('-pl', "--max_print", help=f"Error limit. ex: 100", type=int,
+    parser.add_argument('-pl', "--max_print", help=f"Max results to print. ex: 10", type=int,
                         required=False, default=MAX_PRINT)
+    parser.add_argument('-log_examples', "--log_examples", help=f"Max log lines to print. ex: 10", type=int,
+                        required=False, default=MAX_LOG_PRINT)
+    parser.add_argument('-output', "--output_path", help=f"Path to save reports. ex: \"~/Documents/reports\"",
+                        required=False, default=None)
     parser.add_argument('-st', "--search_terms", help=f"Comma separated search terms. ex:\"COLLSCAN,hasSortStage\"",
                         required=False, default=SEARCH_TERMS)
     parser.add_argument('-fs', "--search", help=f"Full search. All terms must be in line. Terms starting with \"-\""
                                                 f" must not be in line ex:\"-COLLSCAN,hasSortStage\"",
-                        required=False, default=SEARCH_TERMS)
+                        required=False, default=SEARCH)
+    parser.add_argument('-ks', "--key_search", help=f"Search for pecific key values ex: bytesRead",
+                        required=False, default=None)
     parser.add_argument('-ratio', "--ratio", help=f"Include ratio analysis . ex: 1/0", type=bool,
                         required=False, default=RATIO)
-    parser.add_argument('-duration', "--duration", help=f"Include duration analysis . ex: 1/0", type=bool,
-                        required=False, default=DURATION)
+    # parser.add_argument('-duration', "--duration", help=f"Include duration analysis . ex: 1/0", type=bool,
+    #                     required=False, default=DURATION)
     args = parser.parse_args()
 
     if args.path and os.path.sep not in args.path:
         args.path = os.path.join(os.getcwd(), args.path)
 
-    print("CLI usage: queries_analyzer [-h] [-p PATH] [-s START_TIME] [-r END_TIME] [-l ERROR_LIMIT] [-pl MAX_PRINT] "
-          "[-st SEARCH_TERMS] [-fs SEARCH] [-ratio RATIO] [-duration DURATION]")
+    print("CLI usage \"queries_analyzer -h\" for execution details.")
 
     if args.path:
         analyzer(**vars(args))
@@ -60,7 +67,7 @@ def main():
 
 
 def form():
-    root = FormTemplate()
+    root = FormTemplate(sizey=350)
     root.add_title("Log Analyzer")
     root.add_wellcome_message("Queries Analyzer")
 
@@ -70,23 +77,26 @@ def form():
     decoder_error_limit = root.add_num_field(name="Decoder Error Limit", default=100, info="Max allowed decoder errors")
     max_print = root.add_num_field(name="Max print length", default=10, info="Max lines to print per report")
 
+    output_path = root.add_text_field(name="Output Path", default="", info="Path to save report files in")
+
     root.add_separator()
     search_terms = root.add_text_field(name="Single Search Terms",
                                        default="COLLSCAN,hasSortStage,writeConflicts,regex",
-
-
-
-
                                        info="Comma separated terms to scan the log for. No Spaces. "
                                             "Checks log for each term separately. Leave empty to skip")
-    search = root.add_text_field(name="Full Search Terms",
+    search = root.add_text_field(name="Full Search",
                                  default="",
                                  info="Comma separated search words to look for in log. No Spaces. Checks the log for"
                                       "all search terms to be present. Leave empty to skip"
                                       "Terms starting with \"-\" must not be in line")
+
+    log_examples = root.add_num_field(name="Log Examples", default=1, info="Log examples to include in report")
+
+    key_search = root.add_text_field(name="Key Searcg", default="bytesRead", info="Custom log attribute to sort by")
+
     ratio = root.add_bool_field(name="Do Ratio Analysis", default=False, info="Include Ratio Analysis")
-    duration = root.add_bool_field(name="Do Slow Ops Analysis", default=False,
-                                   info="Show slowest running ops grouped by query shape")
+    # duration = root.add_bool_field(name="Do Slow Ops Analysis", default=False,
+    #                                info="Show slowest running ops grouped by query shape")
 
     root.set_action_button(
         "Run Analyzer",
@@ -99,8 +109,10 @@ def form():
             search_terms=search_terms.get(),
             search=search.get(),
             ratio=ratio.get(),
-            duration=duration.get(),
-            # include=include.get()
+            # duration=duration.get(),
+            key_search=key_search.get(),
+            log_examples=log_examples.get(),
+            output_path=output_path.get(),
         )
     )
 
@@ -116,6 +128,8 @@ def analyzer(*args, **kwargs):
     print("\n")
 
     kwargs['path'] = kwargs['path'].replace('~', os.path.expanduser('~'))
+    if kwargs.get("output_path"):
+        kwargs['output_path'] = kwargs['output_path'].replace('~', os.path.expanduser('~'))
 
     search_terms = kwargs['search_terms'].split(",") if kwargs['search_terms'] else None
 
@@ -132,12 +146,18 @@ def analyzer(*args, **kwargs):
         ratio_threshold=kwargs.get('ratio_threshold') or 1000,
         duration=kwargs.get('duration'),
         search=search,
+        key_search=kwargs.get('key_search'),
+        log_examples=kwargs.get('log_examples'),
+        output_path=kwargs.get('output_path'),
     )
 
 
 def analyzer_main_task(path, start_time, end_time, search_terms: list, search: list,
                        err_limit: int = 100, max_print: int = 10, ratio: bool = False,
-                       ratio_threshold=1000, duration: bool = True):
+                       ratio_threshold=1000, duration: bool = True, key_search=None, log_examples=0,
+                       output_path=None):
+    if not log_examples:
+        log_examples = 0
     try:
         with open(path) as f:
             print(f"Reading \'{path}\'")
@@ -147,6 +167,7 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
 
     min_ts = None
     max_ts = None
+    thread_groups = []
 
     # Search Terms Report
     search_terms_report = dict()
@@ -158,6 +179,7 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
                 'query_shapes': list()
             }
     st_threads = []
+    thread_groups.append(st_threads)
 
     # Search Report
     fs_report = {
@@ -166,6 +188,7 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
         'query_shapes': list()
     }
     fs_threads = []
+    thread_groups.append(fs_threads)
     search_include, search_exclude = list(), list()
     if search:
         for st in search:
@@ -177,10 +200,17 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
     # Ratio Report
     ratio_report = list()
     ratio_threads = []
+    thread_groups.append(ratio_threads)
 
-    # Duration Report
-    duration_report = list()
-    duration_threads = []
+    # # Duration Report
+    # duration_report = list()
+    # duration_threads = []
+    # thread_groups.append(duration_threads)
+
+    # Key Search Report
+    key_search_report = list()
+    key_search_threads = []
+    thread_groups.append(key_search_threads)
 
     # Process Line
     exec_start = time.time()
@@ -191,7 +221,7 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
         print_progress_bar(i + 1, len(log_file), length=30,
                            suffix=f"Report Threads: Terms({len(st_threads)}), "
                                   f"Ratio({len(ratio_threads)}), "
-                                  f"SlowOps({len(duration_threads)}) "
+                                  f"keySearch({len(key_search_threads)}) "
                                   f"Search({len(fs_threads)})")
         i += 1
 
@@ -219,88 +249,100 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
         ################
         # SEARCH TERMS #
         ################
-        if search_terms \
-                and date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
-                and any(term in line for term in search_terms):
+        if search_terms:
+            if date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
+                    and any(term in line for term in search_terms):
 
-            t = Thread(target=task_search_term_analysis, args=(search_terms, line, search_terms_report, line_json))
-            t.start()
-            while not len(st_threads) < 100:
-                for t in st_threads:
-                    t.join()
-                    st_threads.remove(t)
-            st_threads.append(t)
-            # search_term_analysis(search_terms, line, search_terms_report, line_json)
+                t = Thread(target=task_search_term_analysis, args=(search_terms, line, search_terms_report, line_json))
+                t.start()
+                while not len(st_threads) < 100:
+                    for t in st_threads:
+                        t.join()
+                        st_threads.remove(t)
+                st_threads.append(t)
+                # search_term_analysis(search_terms, line, search_terms_report, line_json)
 
         ##########
         # SEARCH #
         ##########
-        if (len(search_include) > 0 or len(search_exclude) > 0) \
-                and date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time):
-            match = True
-            for term in search_include:
-                if term not in line:
-                    match = False
-                    break
-            if match:
-                for term in search_exclude:
-                    if term in line:
+        if len(search_include) > 0 or len(search_exclude) > 0:
+            if date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time):
+                match = True
+                for term in search_include:
+                    if term not in line:
                         match = False
                         break
-            if match:
+                if match:
+                    for term in search_exclude:
+                        if term in line:
+                            match = False
+                            break
+                if match:
 
-                t = Thread(target=task_search_analysis,
-                           args=(search_include, search_exclude, line, line_json, fs_report,),
-                           daemon=True)
-                t.start()
-                while len(fs_threads) >= 100:
-                    for t in fs_threads:
-                        t.join()
-                        fs_threads.remove(t)
-                fs_threads.append(t)
-                # task_search_analysis(search_include, search_exclude, line, line_json, fs_report, )
+                    t = Thread(target=task_search_analysis,
+                               args=(search_include, search_exclude, line, line_json, fs_report,),
+                               daemon=True)
+                    t.start()
+                    while len(fs_threads) >= 100:
+                        for t in fs_threads:
+                            t.join()
+                            fs_threads.remove(t)
+                    fs_threads.append(t)
+                    # task_search_analysis(search_include, search_exclude, line, line_json, fs_report, )
 
         #########
         # RATIO #
         #########
-        if ratio and date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
-                and "docsExamined" in line and "nreturned" in line:
+        if ratio:
+            if date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
+                    and "docsExamined" in line and "nreturned" in line:
 
-            t = Thread(target=task_ratio_analysis, args=(ratio_report, line, line_json, ratio_threshold))
-            t.start()
-            while not len(ratio_threads) < 100:
-                for t in ratio_threads:
-                    t.join()
-                    ratio_threads.remove(t)
-            ratio_threads.append(t)
-            # ratio_analysis(ratio_report, line, line_json)
+                t = Thread(target=task_ratio_analysis, args=(ratio_report, line, line_json, ratio_threshold))
+                t.start()
+                while not len(ratio_threads) < 100:
+                    for t in ratio_threads:
+                        t.join()
+                        ratio_threads.remove(t)
+                ratio_threads.append(t)
+                # ratio_analysis(ratio_report, line, line_json)
 
-        ############
-        # DURATION #
-        ############
-        if duration and date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
-                and "durationMillis" in line:
+        ##############
+        # Key Search #
+        ##############
+        if key_search:
+            if date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
+                    and "durationMillis" in line:
 
-            t = Thread(target=task_duration_analysis, args=(duration_report, line, line_json))
-            t.start()
-            while not len(duration_threads) < 100:
-                for t in duration_threads:
-                    t.join()
-                    duration_threads.remove(t)
-            duration_threads.append(t)
-            # task_duration_analysis(duration_report, line, line_json)
+                t = Thread(target=task_key_search_analysis, args=(line_json, line, key_search_report,key_search))
+                t.start()
+                while not len(key_search_threads) < 100:
+                    for t in key_search_threads:
+                        t.join()
+                        key_search_threads.remove(t)
+                key_search_threads.append(t)
+                # task_key_search_analysis(line_json, line, key_search_report, key_search)
+
+        # ############
+        # # DURATION #
+        # ############
+        # if duration and date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
+        #         and "durationMillis" in line:
+        #
+        #     t = Thread(target=task_duration_analysis, args=(duration_report, line, line_json))
+        #     t.start()
+        #     while not len(duration_threads) < 100:
+        #         for t in duration_threads:
+        #             t.join()
+        #             duration_threads.remove(t)
+        #     duration_threads.append(t)
+        #     # task_duration_analysis(duration_report, line, line_json)
 
         # /Process Log Line
 
     # Join them worker bees
-    for t in st_threads:
-        t.join(20)
-    for t in ratio_threads:
-        t.join(20)
-    for t in duration_threads:
-        t.join(20)
-    for t in fs_threads:
-        t.join(20)
+    for tg in thread_groups:
+        for t in tg:
+            t.join(10)
     exec_duration = round(time.time() - exec_start, 2)
 
     ##########
@@ -308,86 +350,100 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
     ##########
     print(f"\nAnalysis Done in {exec_duration} seconds. Printing results from {min_ts} to {max_ts}\n")
 
+    if output_path:
+        if not os.path.exists(output_path):
+            os.mkdir(output_path)
+
     ######################
     # Search Term report #
     ######################
     if search_terms:
-        search_terms_output = list()
-        search_terms_output.append(f"\n{'*' * 23}\n* Search Terms Report *\n{'*' * 23}\n")
+        search_terms_output = ""
+        search_terms_output += f"\n{'*' * 23}\n* Search Terms Report *\n{'*' * 23}\n\n"
 
         for k, v in search_terms_report.items():
-            search_terms_output.append(f"\nSearch Term \"{k}\" yielded {len(v['examples'])} results.")
+            search_terms_output += f"\nSearch Term \"{k}\" yielded {len(v['examples'])} results.\n"
             # Namespaces
-            search_terms_output.append(f"\tTop {max_print} NameSpaces (out of {len(v['ns'])}):")
+            search_terms_output += f"\n\tTop {max_print} NameSpaces (out of {len(v['ns'])}):\n"
             for ns, count in dict(sorted(v['ns'].items(), key=lambda x: x[1], reverse=True)[:max_print]).items():
-                search_terms_output.append(f"\t\t{ns}: {count}")
+                search_terms_output += f"\t\t{ns}: {count}\n"
             # Query Shapes
-            search_terms_output.append(f"\tTop {max_print} Query Shapes (out of {len(v['query_shapes'])}):")
+            search_terms_output += f"\n\tTop {max_print} Query Shapes (out of {len(v['query_shapes'])}):\n"
             for fs in sorted(v['query_shapes'], key=lambda x: x['count'], reverse=True)[:max_print]:
-                search_terms_output.append(f"\t\t{json.dumps(fs)}")
+                search_terms_output += f"\t\t{json.dumps(fs)}\n"
             # Example Queries
-            search_terms_output.append(f"\tExamples ({len(v['examples'])}):")
-            if len(v['examples']) > 0:
-                if len(v['examples']) > (max_print * 10):
-                    for i in range(min(max_print, len(v['examples']))):
-                        ex = (v['examples'][randint(0, len(v['examples']) - 1)]).replace('\n', '')
-                        search_terms_output.append(f"{ex}")
-                else:
-                    for example in v['examples'][:max_print]:
-                        search_terms_output.append(example.replace("\n", ''))
-        for i in search_terms_output:
-            print(i)
+            search_terms_output += f"\n\tExamples ({log_examples} of {len(v['examples'])}):\n"
+            for example in v['examples'][:log_examples]:
+                search_terms_output += example
+        if output_path:
+            with open(os.path.join(output_path, "search_terms_report.txt"), "w") as f:
+                f.write(search_terms_output)
+        else:
+            print(search_terms_output)
 
     #################
     # SEARCH REPORT #
     #################
     if search:
-        search_output = list()
-        search_output.append(f"\n{'*' * 18}\n* Search Results *\n{'*' * 18}\n")
-        search_output.append(f"{search}")
+        search_output = ""
+        search_output += f"\n{'*' * 18}\n* Search Results *\n{'*' * 18}\n\n"
+        search_output += f"{search}\n"
 
-        search_output.append(f"\n\tTop {max_print} NameSpaces (out of {len(fs_report['ns'])}):")
+        search_output += f"\n\tTop {max_print} NameSpaces (out of {len(fs_report['ns'])}):\n"
         for ns, count in dict(sorted(fs_report['ns'].items(), key=lambda x: x[1], reverse=True)[:max_print]).items():
-            search_output.append(f"\t\t{ns}: {count}")
+            search_output += f"\t\t{ns}: {count}\n"
 
-        search_output.append(f"\n\tTop {max_print} Query Shapes (out of {len(fs_report['query_shapes'])}):")
+        search_output += f"\n\tTop {max_print} Query Shapes (out of {len(fs_report['query_shapes'])}):\n"
         for qs in sorted(fs_report['query_shapes'], key=lambda x: x['count'], reverse=True)[:max_print]:
             for k, v in qs.items():
-                search_output.append(f"\t\t{k}: {v}")
-            search_output.append("")
+                search_output += f"\t\t{k}: {v}\n"
+            search_output += "\n"
             # search_output.append(f"\t\t{json.dumps(qs)}")
 
-        search_output.append(f"\n\tExamples ({len(fs_report['examples'])}):")
-        for example in fs_report['examples'][:max_print]:
-            search_output.append(example.replace("\n", ''))
-        for i in search_output:
-            print(i)
+        search_output += f"\n\tExamples ({log_examples} of {len(fs_report['examples'])}):\n"
+        for example in fs_report['examples'][:log_examples]:
+            search_output += example
+
+        if output_path:
+            with open(os.path.join(output_path, "search_report.txt"), "w") as f:
+                f.write(search_output)
+        else:
+            print(search_output)
+
+    #####################
+    # Key Search Report #
+    #####################
+    if key_search:
+        keyt_search_output = ""
+        keyt_search_output += f"\n{'*' * 21}\n* Key Search Report *\n{'*' * 21}\n\n"
+        keyt_search_output += f"Showing {max_print} larges values for {key_search} attrbute.\n\n"
+        for i in enumerate(sorted(key_search_report, key=lambda x: x['value'], reverse=True)[:max_print]):
+            keyt_search_output += f"Key search Result {i[0]}:\n"
+            for k, v in i[1].items():
+                keyt_search_output += f"\t{k}: {v}\n"
+        if output_path:
+            with open(os.path.join(output_path, "key_search_report.txt"), "w") as f:
+                f.write(keyt_search_output)
+        else:
+            print(keyt_search_output)
+
 
     ################
     # RATIO REPORT #
     ################
     if ratio:
-        ratio_output = list()
-        ratio_output.append(f"\n{'*' * 16}\n* Ratio Report *\n{'*' * 16}\n")
-        ratio_output.append(f"Showing {max_print} worst ratios grouped by query shape.\n")
-        for i in sorted(ratio_report, key=lambda x: x['Ratio'], reverse=True)[:max_print]:
-            for k, v in i.items():
-                ratio_output.append(f"\t{k}: {v}")
-        for i in ratio_output:
-            print(i)
-
-    ###################
-    # Duration Report #
-    ###################
-    if duration:
-        duration_output = list()
-        duration_output.append(f"\n{'*' * 19}\n* Duration Report *\n{'*' * 19}\n")
-        duration_output.append(f"Showing {max_print} longest running query shapes.\n")
-        for i in sorted(duration_report, key=lambda x: x['durationMillis'], reverse=True)[:max_print]:
-            for k, v in i.items():
-                duration_output.append(f"\t{k}: {v}")
-        for i in duration_output:
-            print(i)
+        ratio_output = ""
+        ratio_output += f"\n{'*' * 16}\n* Ratio Report *\n{'*' * 16}\n\n"
+        ratio_output += f"Showing {max_print} worst ratios grouped by query shape.\n\n"
+        for i in enumerate(sorted(ratio_report, key=lambda x: x['Ratio'], reverse=True)[:max_print]):
+            ratio_output += f"Ratio Result {i[0]}:\n"
+            for k, v in i[1].items():
+                ratio_output += f"\t{k}: {v}\n"
+        if output_path:
+            with open(os.path.join(output_path, "ratio_report.txt"), "w") as f:
+                f.write(ratio_output)
+        else:
+            print(ratio_output)
 
 
 def task_search_term_analysis(search_terms, line, rep, line_json, ):
@@ -518,6 +574,55 @@ def task_duration_analysis(duration_report: list, line: str, line_json: dict):
             )
 
 
+def task_key_search_analysis(line_json, line, report, key):
+    ns = util_get_operation_namespace(line_json)
+    operation_detail = util_get_query_details(line_json, ns, line)
+    shape = operation_detail['filter'] if operation_detail else None
+    value = util_get_key_value(line_json, key)
+    plan = line_json['attr'].get('planSummary')
+
+    if value and shape:
+        found = False
+        if isinstance(value, int):
+            for i in report:
+                if i['query_shape'] == shape:
+                    found = True
+                    if i['value'] < value:
+                        i['value'] = value
+                        i['planSummary'] = plan
+                        i['example'] = line
+                    i['count'] += 1
+        else:
+            for i in report:
+                if i['query_shape'] == shape and i['value'] == value:
+                    i['count'] += 1
+                    found = True
+
+        if not found:
+            report.append(
+                {
+                    "count": 1,
+                    "attribute": key,
+                    "value": value,
+                    "query_shape": shape,
+                    "ns": ns,
+                    "planSummary": plan,
+                    "example": line
+                }
+            )
+
+
+def util_get_key_value(d: dict, t: str):
+    for k, v in d.items():
+        if k == t:
+            return v
+        elif isinstance(v, dict):
+            r = util_get_key_value(v, t)
+            if r:
+                return r
+    return None
+
+
 def util_get_query_details(line_json, ns, line):
     query_details = None
     if line_json.get("attr") and line_json["attr"].get('type'):
@@ -566,7 +671,7 @@ def util_get_query_details(line_json, ns, line):
                 qfilter = line_json["attr"]["command"].get("q")
                 qsort = line_json['attr']['command'].get('sort')
                 qupdate = line_json['attr']['command'].get('u')
-                update_shape = devalue_json(qupdate)
+                update_shape = get_mongo_filter_shape(qupdate)
 
         # Remove
         elif qtype == "remove":
@@ -579,7 +684,7 @@ def util_get_query_details(line_json, ns, line):
             raise NotImplementedError(f"\rOperation type \"{qtype}\" not parsed!\n{line}\n")
 
         if qfilter:
-            filter_shape = devalue_json(qfilter)
+            filter_shape = get_mongo_filter_shape(qfilter)
             query_details = dict()
             query_details['type'] = f"{qtype}({op_type})" if op_type else qtype
             query_details['ns'] = ns
