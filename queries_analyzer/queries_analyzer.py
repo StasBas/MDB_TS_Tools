@@ -11,14 +11,15 @@ from multiprocessing import Event, Queue
 from Experiment.mongodb_experiment.util.analysis_form import FormTemplate
 from Experiment.mongodb_experiment.util.utils import print_progress_bar, date_from_string, get_mongo_filter_shape
 
-PATH = None
-# PATH = "~/Downloads/sampleLog.log"
+PATH = None  # "~/Downloads/sampleLog.log"
 TIME_S = "1970-01-01T00:00:00"
 TIME_E = "2830-01-01T00:00:00"
 DECODER_ERR_MAX = 100
 MAX_PRINT = 10
 MAX_LOG_PRINT = 1
-OUTPUT_PATH = "~/Documents/reports"
+OUTPUT_PATH = None  # "~/Documents/reports"
+KEY_SEARCH = None  # "bytesRead"
+OVERWRITE_REPORTS = False
 
 SEARCH_TERMS = ""
 SEARCH = ""
@@ -41,24 +42,22 @@ def main():
     parser.add_argument('-log_examples', "--log_examples", help=f"Max log lines to print. ex: 10", type=int,
                         required=False, default=MAX_LOG_PRINT)
     parser.add_argument('-output', "--output_path", help=f"Path to save reports. ex: \"~/Documents/reports\"",
-                        required=False, default=None)
+                        required=False, default=OUTPUT_PATH)
     parser.add_argument('-st', "--search_terms", help=f"Comma separated search terms. ex:\"COLLSCAN,hasSortStage\"",
                         required=False, default=SEARCH_TERMS)
     parser.add_argument('-fs', "--search", help=f"Full search. All terms must be in line. Terms starting with \"-\""
                                                 f" must not be in line ex:\"-COLLSCAN,hasSortStage\"",
                         required=False, default=SEARCH)
     parser.add_argument('-ks', "--key_search", help=f"Search for pecific key values ex: bytesRead",
-                        required=False, default=None)
+                        required=False, default=KEY_SEARCH)
     parser.add_argument('-ratio', "--ratio", help=f"Include ratio analysis . ex: 1/0", type=bool,
                         required=False, default=RATIO)
-    # parser.add_argument('-duration', "--duration", help=f"Include duration analysis . ex: 1/0", type=bool,
-    #                     required=False, default=DURATION)
     args = parser.parse_args()
 
     if args.path and os.path.sep not in args.path:
         args.path = os.path.join(os.getcwd(), args.path)
 
-    print("CLI usage \"queries_analyzer -h\" for execution details.")
+    print("For CLI usage run \"queries_analyzer -h\".")
 
     if args.path:
         analyzer(**vars(args))
@@ -77,26 +76,28 @@ def form():
     decoder_error_limit = root.add_num_field(name="Decoder Error Limit", default=100, info="Max allowed decoder errors")
     max_print = root.add_num_field(name="Max print length", default=10, info="Max lines to print per report")
 
-    output_path = root.add_text_field(name="Output Path", default="", info="Path to save report files in")
+    output_path = root.add_text_field(name="Output Path", default="", info="Path to save report files in. ex:"
+                                                                           "\"~/Documents/Reports\"")
 
     root.add_separator()
     search_terms = root.add_text_field(name="Single Search Terms",
-                                       default="COLLSCAN,hasSortStage,writeConflicts,regex",
+                                       default="",
                                        info="Comma separated terms to scan the log for. No Spaces. "
-                                            "Checks log for each term separately. Leave empty to skip")
+                                            "Checks log for each term separately. "
+                                            "ex: COLLSCAN,hasSortStage,writeConflicts,regex")
     search = root.add_text_field(name="Full Search",
                                  default="",
                                  info="Comma separated search words to look for in log. No Spaces. Checks the log for"
-                                      "all search terms to be present. Leave empty to skip"
-                                      "Terms starting with \"-\" must not be in line")
+                                      "all search terms to be present. "
+                                      "Use \"-\" for terms to exclude."
+                                      "ex: \"hasSortStage,-COLLSCAN\" (all indexed blocking sort ops).")
 
     log_examples = root.add_num_field(name="Log Examples", default=1, info="Log examples to include in report")
 
-    key_search = root.add_text_field(name="Key Searcg", default="bytesRead", info="Custom log attribute to sort by")
+    key_search = root.add_text_field(name="Log Attribute Search", default="", info="Custom log attribute ro report for"
+                                                                                   "ex: bytesRead, durationMillis")
 
-    ratio = root.add_bool_field(name="Do Ratio Analysis", default=False, info="Include Ratio Analysis")
-    # duration = root.add_bool_field(name="Do Slow Ops Analysis", default=False,
-    #                                info="Show slowest running ops grouped by query shape")
+    ratio = root.add_bool_field(name="Ratio Analysis", default=False, info="Include Ratio Analysis")
 
     root.set_action_button(
         "Run Analyzer",
@@ -109,7 +110,6 @@ def form():
             search_terms=search_terms.get(),
             search=search.get(),
             ratio=ratio.get(),
-            # duration=duration.get(),
             key_search=key_search.get(),
             log_examples=log_examples.get(),
             output_path=output_path.get(),
@@ -144,20 +144,16 @@ def analyzer(*args, **kwargs):
         search_terms=search_terms,
         ratio=kwargs['ratio'],
         ratio_threshold=kwargs.get('ratio_threshold') or 1000,
-        duration=kwargs.get('duration'),
         search=search,
         key_search=kwargs.get('key_search'),
-        log_examples=kwargs.get('log_examples'),
+        log_examples=kwargs.get('log_examples') if kwargs.get('log_examples') else 0,
         output_path=kwargs.get('output_path'),
     )
 
 
 def analyzer_main_task(path, start_time, end_time, search_terms: list, search: list,
                        err_limit: int = 100, max_print: int = 10, ratio: bool = False,
-                       ratio_threshold=1000, duration: bool = True, key_search=None, log_examples=0,
-                       output_path=None):
-    if not log_examples:
-        log_examples = 0
+                       ratio_threshold=1000, key_search=None, log_examples=0, output_path=None):
     try:
         with open(path) as f:
             print(f"Reading \'{path}\'")
@@ -253,7 +249,9 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
             if date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
                     and any(term in line for term in search_terms):
 
-                t = Thread(target=task_search_term_analysis, args=(search_terms, line, search_terms_report, line_json))
+                t = Thread(target=task_search_term_analysis,
+                           args=(search_terms, line, search_terms_report, line_json),
+                           daemon=True)
                 t.start()
                 while not len(st_threads) < 100:
                     for t in st_threads:
@@ -297,7 +295,9 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
             if date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
                     and "docsExamined" in line and "nreturned" in line:
 
-                t = Thread(target=task_ratio_analysis, args=(ratio_report, line, line_json, ratio_threshold))
+                t = Thread(target=task_ratio_analysis,
+                           args=(ratio_report, line, line_json, ratio_threshold),
+                           daemon=True)
                 t.start()
                 while not len(ratio_threads) < 100:
                     for t in ratio_threads:
@@ -311,9 +311,11 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
         ##############
         if key_search:
             if date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
-                    and "durationMillis" in line:
+                    and key_search in line:
 
-                t = Thread(target=task_key_search_analysis, args=(line_json, line, key_search_report,key_search))
+                t = Thread(target=task_key_search_analysis,
+                           args=(line_json, line, key_search_report, key_search),
+                           daemon=True)
                 t.start()
                 while not len(key_search_threads) < 100:
                     for t in key_search_threads:
@@ -321,23 +323,6 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
                         key_search_threads.remove(t)
                 key_search_threads.append(t)
                 # task_key_search_analysis(line_json, line, key_search_report, key_search)
-
-        # ############
-        # # DURATION #
-        # ############
-        # if duration and date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
-        #         and "durationMillis" in line:
-        #
-        #     t = Thread(target=task_duration_analysis, args=(duration_report, line, line_json))
-        #     t.start()
-        #     while not len(duration_threads) < 100:
-        #         for t in duration_threads:
-        #             t.join()
-        #             duration_threads.remove(t)
-        #     duration_threads.append(t)
-        #     # task_duration_analysis(duration_report, line, line_json)
-
-        # /Process Log Line
 
     # Join them worker bees
     for tg in thread_groups:
@@ -375,11 +360,7 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
             search_terms_output += f"\n\tExamples ({log_examples} of {len(v['examples'])}):\n"
             for example in v['examples'][:log_examples]:
                 search_terms_output += example
-        if output_path:
-            with open(os.path.join(output_path, "search_terms_report.txt"), "w") as f:
-                f.write(search_terms_output)
-        else:
-            print(search_terms_output)
+        util_handle_report_output(search_terms_output, "search_terms_report.txt", OVERWRITE_REPORTS, output_path)
 
     #################
     # SEARCH REPORT #
@@ -404,29 +385,20 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
         for example in fs_report['examples'][:log_examples]:
             search_output += example
 
-        if output_path:
-            with open(os.path.join(output_path, "search_report.txt"), "w") as f:
-                f.write(search_output)
-        else:
-            print(search_output)
+        util_handle_report_output(search_output, "search_report.txt", OVERWRITE_REPORTS, output_path)
 
     #####################
     # Key Search Report #
     #####################
     if key_search:
         keyt_search_output = ""
-        keyt_search_output += f"\n{'*' * 21}\n* Key Search Report *\n{'*' * 21}\n\n"
-        keyt_search_output += f"Showing {max_print} larges values for {key_search} attrbute.\n\n"
+        keyt_search_output += f"\n{'*' * 24}\n* Log Attribute Report *\n{'*' * 24}\n\n"
+        keyt_search_output += f"Showing {max_print} larges values for {key_search} attribute.\n\n"
         for i in enumerate(sorted(key_search_report, key=lambda x: x['value'], reverse=True)[:max_print]):
             keyt_search_output += f"Key search Result {i[0]}:\n"
             for k, v in i[1].items():
                 keyt_search_output += f"\t{k}: {v}\n"
-        if output_path:
-            with open(os.path.join(output_path, "key_search_report.txt"), "w") as f:
-                f.write(keyt_search_output)
-        else:
-            print(keyt_search_output)
-
+        util_handle_report_output(keyt_search_output, f"{key_search}_report.txt", OVERWRITE_REPORTS, output_path)
 
     ################
     # RATIO REPORT #
@@ -439,11 +411,7 @@ def analyzer_main_task(path, start_time, end_time, search_terms: list, search: l
             ratio_output += f"Ratio Result {i[0]}:\n"
             for k, v in i[1].items():
                 ratio_output += f"\t{k}: {v}\n"
-        if output_path:
-            with open(os.path.join(output_path, "ratio_report.txt"), "w") as f:
-                f.write(ratio_output)
-        else:
-            print(ratio_output)
+        util_handle_report_output(ratio_output, "ratio_report.txt", OVERWRITE_REPORTS, output_path)
 
 
 def task_search_term_analysis(search_terms, line, rep, line_json, ):
@@ -544,42 +512,16 @@ def task_ratio_analysis(ratio_report: list, line: str, line_json: dict, ratio_th
             )
 
 
-def task_duration_analysis(duration_report: list, line: str, line_json: dict):
-    ns = util_get_operation_namespace(line_json)
-    operation_detail = util_get_query_details(line_json, ns, line)
-    shape = operation_detail['filter'] if operation_detail else None
-    duration = line_json['attr'].get('durationMillis')
-    plan = line_json['attr'].get('planSummary')
-
-    if duration and shape:
-        found = False
-        for i in duration_report:
-            if i['query_shape'] == shape:
-                found = True
-                if i['durationMillis'] < duration:
-                    i['durationMillis'] = duration
-                    i['planSummary'] = plan
-                    i['example'] = line
-                i['count'] += 1
-        if not found:
-            duration_report.append(
-                {
-                    "count": 1,
-                    "durationMillis": duration,
-                    "query_shape": shape,
-                    "ns": ns,
-                    "planSummary": plan,
-                    "example": line
-                }
-            )
-
-
 def task_key_search_analysis(line_json, line, report, key):
     ns = util_get_operation_namespace(line_json)
     operation_detail = util_get_query_details(line_json, ns, line)
     shape = operation_detail['filter'] if operation_detail else None
     value = util_get_key_value(line_json, key)
-    plan = line_json['attr'].get('planSummary')
+
+    try:
+        plan = line_json['attr'].get('planSummary')
+    except KeyError:
+        plan = None
 
     if value and shape:
         found = False
@@ -610,6 +552,10 @@ def task_key_search_analysis(line_json, line, report, key):
                     "example": line
                 }
             )
+
+
+def util_filename_add_ts(fn: str):
+    return fn.rsplit(".", 1)[0] + f"_{time.ctime().replace(' ', '_').replace(':', '-')}" + "." + fn.rsplit(".", 1)[1]
 
 
 def util_get_key_value(d: dict, t: str):
@@ -666,8 +612,7 @@ def util_get_query_details(line_json, ns, line):
 
         # UPDATE
         elif qtype == "update":
-            if line_json["attr"].get('command') and line_json["attr"]['command'].get('q'):
-
+            if line_json["attr"].get('command') and line_json["attr"]gi['command'].get('q'):
                 qfilter = line_json["attr"]["command"].get("q")
                 qsort = line_json['attr']['command'].get('sort')
                 qupdate = line_json['attr']['command'].get('u')
@@ -718,6 +663,19 @@ def util_get_operation_namespace(line_json):
         op_db = line_json.get("attr").get("command").get('$db')
         ns = f"{op_db}.{op_coll}"
     return ns
+
+
+def util_handle_report_output(report_output, report_name, overwrite=False, output_path=None):
+    if output_path:
+        if overwrite:
+            fpath = os.path.join(output_path, report_name)
+        else:
+            fpath = os.path.join(output_path, util_filename_add_ts(report_name))
+        with open(fpath, "w") as f:
+            f.write(report_output)
+        print(f"Results saved to {fpath}")
+    else:
+        print(report_output)
 
 
 def util_update_time_stamps(min_ts, max_ts, ts):
