@@ -2,3 +2,4 @@ pymongo
 certifi
 faker
 pymongocrypt
+pyinstaller
