@@ -2,14 +2,6 @@
 
 Analyze log by shape of queries. Parses default structured MongoDB logs.
 
-To run from CLI provide "path" param. 
-
-For full usage guide run "queries_analyzer -h". Example:
-
-    usage: queries_analyzer.py [-h] [-p PATH] [-s START_TIME] [-r END_TIME][-l ERROR_LIMIT] [-pl MAX_PRINT]
-                           [-log_examples LOG_EXAMPLES] [-output OUTPUT_PATH]
-                           [-fs SEARCH] [-ks KEY_SEARCH] [-ratio RATIO] [-w
-                           WORKERS]
 
 ## Params
 
@@ -33,6 +25,16 @@ For full usage guide run "queries_analyzer -h". Example:
 
 
 ### CLI
+
+To run from CLI provide "path" param. 
+
+For full usage guide run "queries_analyzer -h". Example:
+
+    usage: queries_analyzer.py [-h] [-p PATH] [-s START_TIME] [-r END_TIME][-l ERROR_LIMIT] [-pl MAX_PRINT]
+                           [-log_examples LOG_EXAMPLES] [-output OUTPUT_PATH]
+                           [-fs SEARCH] [-ks KEY_SEARCH] [-ratio RATIO] [-w
+                           WORKERS]
+
 
 
 
