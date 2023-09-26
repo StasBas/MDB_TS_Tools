@@ -13,7 +13,7 @@ from utils.ops import print_progress_bar, date_from_string, devalue_json
 
 PATH = None  # "~/Downloads/sampleLog.log"
 TIME_S = "1970-01-01T00:00:00"
-TIME_E = "2830-01-01T00:00:00"
+TIME_E = "2077-10-31T11:03:00"
 DECODER_ERR_MAX = 100
 MAX_PRINT = 10
 MAX_LOG_PRINT = 1
@@ -24,8 +24,7 @@ WORKERS = int(os.cpu_count()/2)
 
 SEARCH_TERMS = ""
 SEARCH = ""
-RATIO = True
-DURATION = True
+RATIO = False
 
 
 def main():
@@ -183,6 +182,8 @@ def analyzer_executor(path, start_time, end_time, search: list, workers=1,
     ratio_report = list()
     key_search_report = list()
 
+    time_stamps = dict(min_ts=None, max_ts=None)
+
     # Search Report
     fs_report = dict(examples=list(), ns=dict(), query_shapes=list())
     search_include, search_exclude = list(), list()
@@ -211,7 +212,7 @@ def analyzer_executor(path, start_time, end_time, search: list, workers=1,
         raise FileNotFoundError(f"No such file: \'{path}\'")
 
     qin_generator = Thread(target=task_generate_queue,
-                           args=(qin, qin_done, log_file),
+                           args=(qin, qin_done, log_file, time_stamps),
                            daemon=True)
     qin_generator.start()
 
@@ -259,7 +260,7 @@ def analyzer_executor(path, start_time, end_time, search: list, workers=1,
         time.sleep(1)
 
     for p in procs:
-        p.join(1)
+        p.terminate()
 
     print(end=f"\rElapsed: {round(time.time() - ex_start_time)}s, "
               f"Read Done: {qin_done.is_set()}, "
@@ -271,10 +272,6 @@ def analyzer_executor(path, start_time, end_time, search: list, workers=1,
                       ratio=ratio, ratio_report=ratio_report,
                       key_search=key_search, key_search_report=key_search_report,
                       search=search, fs_report=fs_report, )
-
-    # TODO: calculate min/max ts in analyzed range
-    # min_ts = None
-    # max_ts = None
 
 
 def analyzer_reporter(max_print, output_path, log_examples,
