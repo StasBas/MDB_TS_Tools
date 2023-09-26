@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+from tqdm import tqdm
 import argparse
 from datetime import datetime
 
@@ -23,6 +24,9 @@ FILENAME_REQ = False
 DATE_FORMAT = "%Y-%m-%dT%H:%M:%S"
 DECODER_ERROR_LIMIT = 100
 
+# Analysis Search Terms
+SEARCH_TERMS = ["Connection accepted", "Connection ended", "client metadata"]
+
 
 def main():
     # PARAMS
@@ -43,13 +47,9 @@ def main():
                         type=int,
                         default=MAX_PRINT.get() if isinstance(MAX_PRINT, tk.IntVar) else MAX_PRINT)
     args = parser.parse_args()
-    # PARAMS
-
-    print("""Usage: <Binary Name> [-h] [-p PATH] [-f FILENAME] [-s START]
-                                  [-e END] [-a APPS] [-d DRIVERS]
-                                  [-ll LIMIT]""")
+    # Params
     if not args.filename:
-        print("To run without UI, provide \"FILENAME\" parameter")
+        print("For CLI usage: connections_analyzer -h\n")
         window = main_ui()
         window.mainloop()
     else:
@@ -93,11 +93,10 @@ def analyze_connections(log_file_path: str, start_time: str, end_time: str, app_
     :param decoder_error_limit:
     :return:
     """
-
     try:
-        with open(log_file_path) as f:
-            print(f"Reading \'{log_file_path}\'")
-            log_file = f.readlines()
+        # TODO: need to remove this and replace with file size property instead
+        num_lines = sum(1 for _ in open(log_file_path, 'r'))
+        print(f"Reading \'{log_file_path}\'")
     except FileNotFoundError:
         raise FileNotFoundError(f"No such file: \'{log_file_path}\'")
 
@@ -113,123 +112,118 @@ def analyze_connections(log_file_path: str, start_time: str, end_time: str, app_
     host_applications = dict()  # {host: [apps]}
     host_drivers = dict()  # {host: [drvs]}
 
-    # Analysis Search Terms
-    search_terms = ["Connection accepted", "Connection ended", "client metadata"]
+    print("Parsing log")
+    import time
+    with open(log_file_path, 'r') as f:
+        for i, line in enumerate(tqdm(f, total=num_lines, file=sys.stdout)):
+            if line and line != "\n" and line != "\r" and line != "\n\r":
 
-    i = 0
-    print(f"Parsing log")
-    for line in log_file:
-        print_progress_bar(i + 1, len(log_file), length=30)
-        i += 1
+                # Log line to JSON (structured log)
+                try:
+                    line_json = json.loads(line)
+                except json.JSONDecodeError as err:
+                    json_decoder_errors_counter += 1
+                    if json_decoder_errors_counter < 10:
+                        # Few errors may be a result of how the file was written, empty lines etc..
+                        pass
+                    if json_decoder_errors_counter == 10:
+                        # Considerable number of errors - indicates the file may not be properly formatted.
+                        pass
+                    if json_decoder_errors_counter >= decoder_error_limit:
+                        # Exceeds defined tolerance level
+                        print(f"\n{json_decoder_errors_counter} log entries failed to decode.")
+                        raise RuntimeError(f"\n\"{log_file_path}\" is not a valid MongoDB structured log") from err
+                    continue
 
-        if line and line != "\n" and line != "\r" and line != "\n\r":
+                # Line TS and Conditions for Analysis
+                time_stamp = line_json["t"]["$date"].split(".")[0]
+                if date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
+                        and line_json.get("c") == "NETWORK" \
+                        and any(term in line for term in SEARCH_TERMS) \
+                        and line_json.get("attr") and line_json["attr"].get("remote"):
 
-            # Log line to JSON (structured log)
-            try:
-                line_json = json.loads(line)
-            except json.JSONDecodeError as err:
-                json_decoder_errors_counter += 1
-                if json_decoder_errors_counter < 10:
-                    # Few errors may be a result of how the file was written, empty lines etc..
-                    pass
-                if json_decoder_errors_counter == 10:
-                    # Considerable number of errors - indicates the file may not be properly formatted.
-                    pass
-                if json_decoder_errors_counter >= decoder_error_limit:
-                    # Exceeds defined tolerance level
-                    print(f"\n{json_decoder_errors_counter} log entries failed to decode.")
-                    raise RuntimeError(f"\n\"{log_file_path}\" is not a valid MongoDB structured log") from err
-                continue
+                    # Update earliest and latest examined time stamps
+                    if not first_ts or date_from_string(time_stamp) < date_from_string(first_ts):
+                        first_ts = time_stamp
+                    if not last_ts or date_from_string(time_stamp) > date_from_string(last_ts):
+                        last_ts = time_stamp
 
-            # Line TS and Conditions for Analysis
-            time_stamp = line_json["t"]["$date"].split(".")[0]
-            if date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
-                    and line_json.get("c") == "NETWORK" \
-                    and any(term in line for term in search_terms) \
-                    and line_json.get("attr") and line_json["attr"].get("remote"):
+                    ####################################################################### PROCESS LINE - START
 
-                # Update earliest and latest examined time stamps
-                if not first_ts or date_from_string(time_stamp) < date_from_string(first_ts):
-                    first_ts = time_stamp
-                if not last_ts or date_from_string(time_stamp) > date_from_string(last_ts):
-                    last_ts = time_stamp
+                    origin_ip = line_json["attr"]["remote"].split(":")[0]
 
-                ####################################################################### PROCESS LINE - START
-
-                origin_ip = line_json["attr"]["remote"].split(":")[0]
-
-                # Connection Opened
-                if "Connection accepted" in line_json["msg"]:
-                    total_opened += 1
-                    if hosts_stats.get(origin_ip):
-                        hosts_stats[origin_ip]["opened"] += 1
-                    else:
-                        hosts_stats[origin_ip] = {"opened": 1, "closed": 0}
-                # Connection Closed
-                elif "Connection ended" in line_json["msg"]:
-                    total_closed += 1
-                    if hosts_stats.get(origin_ip):
-                        hosts_stats[origin_ip]["closed"] += 1
-                    else:
-                        hosts_stats[origin_ip] = {"opened": 0, "closed": 1}
-                # Connection Metadata Found * May need review if same host (IP) have different metadata *
-                elif "client metadata" in line_json["msg"]:
-                    # Get Driver
-                    try:
-                        drv = line_json["attr"]["doc"].get("driver").get("name")
-                    except AttributeError:
-                        drv = "unknown"
-                    try:
-                        drv_ver = line_json["attr"]["doc"].get("driver").get("version")
-                    except AttributeError:
-                        drv_ver = "unknown"
-                    # Get App name
-                    try:
-                        app = line_json["attr"]["doc"].get("application").get("name")
-                    except AttributeError:
-                        app = "unknown"
-                    # Get OS
-                    try:
-                        osn = line_json["attr"]["doc"].get("os").get("type")
-                    except AttributeError:
-                        osn = "unknown"
-
-                    # Add metadata info to host stats
-                    # if hosts_stats.get(origin_ip):
-                    #     hosts_stats[origin_ip]["driver"] = drv
-                    #     hosts_stats[origin_ip]["app"] = app
-                    #     hosts_stats[origin_ip]["os"] = osn
-                    # else:
-                    #     hosts_stats[origin_ip] = {"opened": 0, "closed": 0, "driver": drv,
-                    #                               "application": app, "os": osn}
-
-                    # Add Metadata to host applications
-                    if app_info:
-                        if host_applications.get(origin_ip):
-                            if app in host_applications[origin_ip]:
-                                pass
-                            else:
-                                host_applications[origin_ip].append(app)
+                    # Connection Opened
+                    if "Connection accepted" in line_json["msg"]:
+                        total_opened += 1
+                        if hosts_stats.get(origin_ip):
+                            hosts_stats[origin_ip]["opened"] += 1
                         else:
-                            host_applications[origin_ip] = [app]
-
-                    # Add Metadata to host drivers
-                    if driver_info:
-                        driver_full = f"{drv} {drv_ver}"
-                        if host_drivers.get(origin_ip):
-                            if driver_full in host_drivers[origin_ip]:
-                                pass
-                            else:
-                                host_drivers[origin_ip].append(driver_full)
+                            hosts_stats[origin_ip] = {"opened": 1, "closed": 0}
+                    # Connection Closed
+                    elif "Connection ended" in line_json["msg"]:
+                        total_closed += 1
+                        if hosts_stats.get(origin_ip):
+                            hosts_stats[origin_ip]["closed"] += 1
                         else:
-                            host_drivers[origin_ip] = [driver_full]
+                            hosts_stats[origin_ip] = {"opened": 0, "closed": 1}
+                    # Connection Metadata Found * May need review if same host (IP) have different metadata *
+                    elif "client metadata" in line_json["msg"]:
+                        # Get Driver
+                        try:
+                            drv = line_json["attr"]["doc"].get("driver").get("name")
+                        except AttributeError:
+                            drv = "unknown"
+                        try:
+                            drv_ver = line_json["attr"]["doc"].get("driver").get("version")
+                        except AttributeError:
+                            drv_ver = "unknown"
+                        # Get App name
+                        try:
+                            app = line_json["attr"]["doc"].get("application").get("name")
+                        except AttributeError:
+                            app = "unknown"
+                        # Get OS
+                        try:
+                            osn = line_json["attr"]["doc"].get("os").get("type")
+                        except AttributeError:
+                            osn = "unknown"
+
+                        # Add metadata info to host stats
+                        # if hosts_stats.get(origin_ip):
+                        #     hosts_stats[origin_ip]["driver"] = drv
+                        #     hosts_stats[origin_ip]["app"] = app
+                        #     hosts_stats[origin_ip]["os"] = osn
+                        # else:
+                        #     hosts_stats[origin_ip] = {"opened": 0, "closed": 0, "driver": drv,
+                        #                               "application": app, "os": osn}
+
+                        # Add Metadata to host applications
+                        if app_info:
+                            if host_applications.get(origin_ip):
+                                if app not in host_applications[origin_ip]:
+                                    host_applications[origin_ip].append(app)
+                            else:
+                                host_applications[origin_ip] = [app]
+
+                        # Add Metadata to host drivers
+                        if driver_info:
+                            driver_full = f"{drv} {drv_ver}"
+                            if host_drivers.get(origin_ip):
+                                if driver_full not in host_drivers[origin_ip]:
+                                    host_drivers[origin_ip].append(driver_full)
+                            else:
+                                host_drivers[origin_ip] = [driver_full]
 
     ####################################################################### PROCESS LINE - END
 
     # OUTPUT
     print(f"\nShowing up to {print_limit} results for each section, sorted in descending order")
-    print(f"Results from {first_ts} to {last_ts}")
-    print("-" * 60)
+    # Create an f-string for the text
+    formatted_text = f"Results from {first_ts} to {last_ts}"
+    # Create an f-string for the line of asterisks with the same length
+    asterisks_line = f"{'*' * len(formatted_text)}"
+    print(formatted_text)
+    print(asterisks_line)
 
     if app_info:
         apps_list_sorted = sorted(host_applications.items(), key=lambda x: len(x[1]), reverse=True)
@@ -237,7 +231,7 @@ def analyze_connections(log_file_path: str, start_time: str, end_time: str, app_
         for i in apps_list_sorted[:print_limit]:
             print(f"\t{i[0]} ({len(i[1]):,d}): {i[1][:print_limit]}{'...' if len(i[1]) > print_limit > 0 else ''}")
         if len(apps_list_sorted) > print_limit > 0:
-            print(f"\t...")
+            print("\t...")
 
     if driver_info:
         drivers_list_sorted = sorted(host_drivers.items(), key=lambda x: len(x[1]), reverse=True)
@@ -245,16 +239,16 @@ def analyze_connections(log_file_path: str, start_time: str, end_time: str, app_
         for i in drivers_list_sorted[:print_limit]:
             print(f"\t{i[0]} ({len(i[1]):,d}): {i[1][:print_limit]}{'...' if len(i[1]) > print_limit > 0 else ''}")
         if len(drivers_list_sorted) > print_limit > 0:
-            print(f"\t...")
+            print("\t...")
 
-    print(f"\nHosts Connections Stats:")
+    print("\nHosts Connections Stats:")
     sort_key = "opened"
     connections_list_sorted = sorted(hosts_stats.items(), key=lambda x: x[1][sort_key], reverse=True)
     for i in connections_list_sorted[:print_limit]:
         print(f"\t{i[0]}: Opened {i[1]['opened']:,d}, Closed {i[1]['closed']:,d}, "
               f"Delta {(i[1]['opened'] - i[1]['closed']):,d}")
     if len(connections_list_sorted) > print_limit > 0:
-        print(f"\t...")
+        print("\t...")
 
     print("\nTotal Connections ({} to {}): \n\tOpened: {:,}\n\tClosed: {:,}\n\tDelta:  {:,}".format(
         first_ts, last_ts, total_opened, total_closed, total_opened - total_closed)
@@ -312,15 +306,15 @@ def check_file_path(file_name: str, path: str) -> str:
         return os.path.join(path, file_name)
 
 
-def print_progress_bar(iteration, total, prefix="Progress", suffix="Complete", decimals=1, length=100, fill='█'):
-    # percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
-    percent = round(100 * (iteration / float(total)), 2)
-    filled_length = int(length * iteration // total)
-    bar = fill * filled_length + '-' * (length - filled_length)
-    print(end=f'\r{prefix} |{bar}| {percent}% {suffix}')
-    # Print New Line on Complete
-    if iteration == total:
-        print()
+# def print_progress_bar(iteration, total, prefix="Progress", suffix="Complete", decimals=1, length=100, fill='█'):
+#     # percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+#     percent = round(100 * (iteration / float(total)), 2)
+#     filled_length = int(length * iteration // total)
+#     bar = fill * filled_length + '-' * (length - filled_length)
+#     print(end=f'\r{prefix} |{bar}| {percent}% {suffix}')
+#     # Print New Line on Complete
+#     if iteration == total:
+#         print()
 
 
 def main_ui():
@@ -386,7 +380,7 @@ def main_ui():
     apps_info = tk.BooleanVar()
     apps_info.set(False)
     tk.Checkbutton(form, text='', variable=apps_info, onvalue=1, offvalue=0).grid(row=5, column=10, sticky="w")
-    tk.Label(form, text=f"Print available connection applications metadata").grid(row=5, column=20, sticky="w")
+    tk.Label(form, text="Print available connection applications metadata").grid(row=5, column=20, sticky="w")
 
     tk.Label(form, text="Drivers Info").grid(row=6, column=5, sticky="w")
     drivers_info = tk.BooleanVar()
@@ -395,21 +389,21 @@ def main_ui():
         form, text='', variable=drivers_info, onvalue=1, offvalue=0).grid(
         row=6, column=10, sticky="w")
     tk.Label(
-        form, text=f"Print available connection drivers metadata", anchor="w").grid(
+        form, text="Print available connection drivers metadata", anchor="w").grid(
         row=6, column=20, sticky="w")
 
     tk.Label(form, text="Max Entries").grid(row=7, column=5, sticky="w")
     max_print = tk.IntVar()
     max_print.set(10)
     tk.Entry(form, textvariable=max_print).grid(row=7, column=10, sticky="w")
-    tk.Label(form, text=f"Define number of results to print wrapped with \"...\"",
+    tk.Label(form, text="Define number of results to print wrapped with \"...\"",
              anchor="w").grid(row=7, column=20, sticky="w")
 
     tk.Label(form, text="Decoder Error Limit").grid(row=9, column=5, sticky="w")
     decoder_limit = tk.IntVar()
     decoder_limit.set(100)
     tk.Entry(form, textvariable=decoder_limit).grid(row=9, column=10, sticky="w")
-    tk.Label(form, text=f"Maximum number of decoding errors before an error is raised").grid(
+    tk.Label(form, text="Maximum number of decoding errors before an error is raised").grid(
         row=9, column=20, sticky="w")
 
     # Buttons Frame For Buttons

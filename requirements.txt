@@ -1,5 +1,6 @@
 pymongo
 certifi
 faker
+tqdm
 pymongocrypt
 pyinstaller

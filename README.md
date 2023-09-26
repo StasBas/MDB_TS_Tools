@@ -40,6 +40,6 @@ Add by either configuration in IDE or "export" command.
 Step-by-step instructions on how to install your project. You can use code blocks for commands:
 
 ```bash
-$ gh repo clone StasBas/MDB_TS_Tools
+$ git clone StasBas/MDB_TS_Tools
 $ cd MDB_TS_Tools
 $ ./MDB_TS_Tools/connection_analyzer/mac_ARM_build/dist/connections_analyzer
