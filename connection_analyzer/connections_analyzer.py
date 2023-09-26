@@ -1,13 +1,3 @@
-"""_summary_
-
-    Raises:
-        FileNotFoundError: _description_
-        RuntimeError: _description_
-
-    Returns:
-        _type_: _description_
-"""
-
 import os
 import sys
 import json
@@ -17,7 +7,7 @@ from datetime import datetime
 
 import tkinter as tk
 
-# from tkinter import messageboxß
+# from tkinter import messagebox
 
 # PATH = "~/Downloads"
 PATH = os.getcwd()
@@ -58,9 +48,8 @@ def main():
                         default=MAX_PRINT.get() if isinstance(MAX_PRINT, tk.IntVar) else MAX_PRINT)
     args = parser.parse_args()
     # Params
-    parser.print_help()
     if not args.filename:
-        print("To run without UI, provide \"FILENAME\" parameter")
+        print("For CLI usage: connections_analyzer -h\n")
         window = main_ui()
         window.mainloop()
     else:
@@ -73,7 +62,7 @@ def run_analyzer(*args, **kwargs):
     # if len(args) >= 2:
     #     messagebox.showinfo("Confirmation", f"Submitted\n PATH: {args[0].get()}, \nFILENAME: {args[1].get()}")
 
-    print("\n{'-' * 3}")
+    print(f"\n{'-' * 3}")
     print("\nConnections analyzer running.")
     for k, v in kwargs.items():
         print(f"\t{k}:{' ' * (15 - len(k))}{v}")
@@ -104,10 +93,9 @@ def analyze_connections(log_file_path: str, start_time: str, end_time: str, app_
     :param decoder_error_limit:
     :return:
     """
-
     try:
-        ## TBD need to remove this and replace with file size property instead
-        num_lines = sum(1 for _ in open(log_file_path,'r'))
+        # TODO: need to remove this and replace with file size property instead
+        num_lines = sum(1 for _ in open(log_file_path, 'r'))
         print(f"Reading \'{log_file_path}\'")
     except FileNotFoundError:
         raise FileNotFoundError(f"No such file: \'{log_file_path}\'")
@@ -125,8 +113,9 @@ def analyze_connections(log_file_path: str, start_time: str, end_time: str, app_
     host_drivers = dict()  # {host: [drvs]}
 
     print("Parsing log")
-    with open(log_file_path,'r') as f:
-        for i,line in enumerate(tqdm(f,total=num_lines)):
+    import time
+    with open(log_file_path, 'r') as f:
+        for i, line in enumerate(tqdm(f, total=num_lines, file=sys.stdout)):
             if line and line != "\n" and line != "\r" and line != "\n\r":
 
                 # Log line to JSON (structured log)
@@ -235,7 +224,7 @@ def analyze_connections(log_file_path: str, start_time: str, end_time: str, app_
     asterisks_line = f"{'*' * len(formatted_text)}"
     print(formatted_text)
     print(asterisks_line)
-    
+
     if app_info:
         apps_list_sorted = sorted(host_applications.items(), key=lambda x: len(x[1]), reverse=True)
         print("\nLogged Hosts Applications:")
