@@ -503,7 +503,7 @@ def util_get_query_details(line_json, ns, line):
                 pass
             elif op_type in ["hello", "serverStatus", "ismaster", "saslStart", "isMaster",
                              "_refreshQueryAnalyzerConfiguration", "ping", "replSetHeartbeat",
-                             "replSetUpdatePosition", "saslContinue"]:
+                             "replSetUpdatePosition", "saslContinue", "collStats"]:
                 pass
             else:
                 print(f"\n{line}\n")
