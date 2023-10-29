@@ -1,0 +1,3 @@
+mongoexport --host rsname/localhost:6070,localhost:6071,localhost:6072 --db test --collection test --noHeaderLine --type=csv --out test1.csv --fields object,date
+
+mongoimport --host rsname/localhost:6070,localhost:6071,localhost:6072 -d test -c test2 --type=csv --file=test1.csv --drop --columnsHaveTypes --fields "accountId.auto(),expirationDate.auto()"
