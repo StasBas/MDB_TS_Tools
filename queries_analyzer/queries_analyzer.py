@@ -212,7 +212,7 @@ def analyzer_executor(path, start_time, end_time, search: list, workers=1,
         raise FileNotFoundError(f"No such file: \'{path}\'")
 
     qin_generator = Thread(target=task_generate_queue,
-                           args=(qin, qin_done, log_file, time_stamps),
+                           args=(qin, qin_done, log_file),
                            daemon=True)
     qin_generator.start()
 
