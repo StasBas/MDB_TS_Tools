@@ -43,3 +43,20 @@ Step-by-step instructions on how to install your project. You can use code block
 $ git clone StasBas/MDB_TS_Tools
 $ cd MDB_TS_Tools
 $ ./MDB_TS_Tools/connection_analyzer/mac_ARM_build/dist/connections_analyzer
+
+To run the code:
+
+May require installation of virtualenv:
+
+```bash
+pip3 install virtualenv
+
+
+```bash
+$ git clone StasBas/MDB_TS_Tools
+$ cd MDB_TS_Tools
+$ virtualenv env
+$ source env/bin/activate
+$ pip3 install -r requirements.txt
+$ python3 -m ./MDB_TS_Tools/queries_analyzer/queries_analyzer.py
+
