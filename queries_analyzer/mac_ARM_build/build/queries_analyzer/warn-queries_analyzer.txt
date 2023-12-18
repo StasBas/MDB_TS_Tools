@@ -14,9 +14,9 @@ Types if import:
 IMPORTANT: Do NOT post this list to the issue-tracker. Use it as a basis for
             tracking down the missing module yourself. Thanks!
 
-missing module named pyimod02_importers - imported by /Users/stas.baskin/repos/scripts/py/venv/lib/python3.11/site-packages/PyInstaller/hooks/rthooks/pyi_rth_pkgutil.py (delayed)
+missing module named pyimod02_importers - imported by /Users/stas.baskin/repos/MDBEXP/MdbExperiment/venv/lib/python3.11/site-packages/PyInstaller/hooks/rthooks/pyi_rth_pkgutil.py (delayed)
 missing module named 'org.python' - imported by copy (optional), xml.sax (delayed, conditional)
-missing module named nt - imported by os (delayed, conditional, optional), ntpath (optional), shutil (conditional), importlib._bootstrap_external (conditional), ctypes (delayed, conditional)
+missing module named nt - imported by shutil (conditional), importlib._bootstrap_external (conditional), ntpath (optional), os (delayed, conditional, optional), ctypes (delayed, conditional)
 missing module named winreg - imported by importlib._bootstrap_external (conditional), mimetypes (optional), urllib.request (delayed, conditional, optional)
 excluded module named _frozen_importlib - imported by importlib (optional), importlib.abc (optional), zipimport (top-level)
 missing module named _frozen_importlib_external - imported by importlib._bootstrap (delayed), importlib (optional), importlib.abc (optional), zipimport (top-level)
@@ -30,5 +30,8 @@ missing module named multiprocessing.TimeoutError - imported by multiprocessing 
 missing module named msvcrt - imported by subprocess (optional), getpass (optional), multiprocessing.spawn (delayed, conditional), multiprocessing.popen_spawn_win32 (top-level)
 missing module named multiprocessing.set_start_method - imported by multiprocessing (top-level), multiprocessing.spawn (top-level)
 missing module named multiprocessing.get_start_method - imported by multiprocessing (top-level), multiprocessing.spawn (top-level)
-missing module named multiprocessing.Queue - imported by multiprocessing (top-level), /Users/stas.baskin/repos/scripts/py/Experiment/mongodb_experiment/log_analyzers/queries_analyzer.py (top-level)
-missing module named multiprocessing.Event - imported by multiprocessing (top-level), /Users/stas.baskin/repos/scripts/py/Experiment/mongodb_experiment/log_analyzers/queries_analyzer.py (top-level)
+missing module named 'Experiment.mongodb_experiment' - imported by /Users/stas.baskin/repos/MDBEXP/MdbExperiment/queries_analyzer/queries_analyzer.py (top-level)
+missing module named Experiment - imported by /Users/stas.baskin/repos/MDBEXP/MdbExperiment/queries_analyzer/queries_analyzer.py (top-level)
+missing module named multiprocessing.Manager - imported by multiprocessing (top-level), /Users/stas.baskin/repos/MDBEXP/MdbExperiment/queries_analyzer/queries_analyzer.py (top-level)
+missing module named multiprocessing.Queue - imported by multiprocessing (top-level), /Users/stas.baskin/repos/MDBEXP/MdbExperiment/queries_analyzer/queries_analyzer.py (top-level)
+missing module named multiprocessing.Event - imported by multiprocessing (top-level), /Users/stas.baskin/repos/MDBEXP/MdbExperiment/queries_analyzer/queries_analyzer.py (top-level)

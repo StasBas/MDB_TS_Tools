@@ -4,12 +4,13 @@ import multiprocessing
 import os
 import time
 
+from random import randint
 from threading import Thread
-from multiprocessing import Event, Queue
+from multiprocessing import Event, Queue, Manager
 from datetime import datetime
 
-from utils.obj import FormTemplate
-from utils.ops import print_progress_bar, date_from_string, devalue_json
+from Experiment.mongodb_experiment.util.analysis_form import FormTemplate
+from Experiment.mongodb_experiment.util.utils import print_progress_bar, date_from_string, get_mongo_filter_shape
 
 PATH = None  # "~/Downloads/sampleLog.log"
 TIME_S = "1970-01-01T00:00:00"
@@ -25,6 +26,7 @@ WORKERS = int(os.cpu_count()/2)
 SEARCH_TERMS = ""
 SEARCH = ""
 RATIO = False
+COUNTER = True
 
 
 def main():
@@ -43,8 +45,7 @@ def main():
                         required=False, default=MAX_LOG_PRINT)
     parser.add_argument('-output', "--output_path", help=f"Path to save reports. ex: \"~/Documents/reports\"",
                         required=False, default=OUTPUT_PATH)
-    # parser.add_argument('-st', "--search_terms", help=f"Comma separated search terms. ex:\"COLLSCAN,hasSortStage\"",
-    #                     required=False, default=SEARCH_TERMS)
+
     parser.add_argument('-fs', "--search", help=f"Full search. All terms must be in line. Terms starting with \"-\""
                                                 f" must not be in line ex:\"-COLLSCAN,hasSortStage\"",
                         required=False, default=SEARCH)
@@ -52,6 +53,9 @@ def main():
                         required=False, default=KEY_SEARCH)
     parser.add_argument('-ratio', "--ratio", help=f"Include ratio analysis . ex: 1/0", type=bool,
                         required=False, default=RATIO)
+    parser.add_argument('-qcount', "--query-couter", help=f"count query shapes . ex: 1/0", type=bool,
+                        required=False, default=COUNTER)
+
     parser.add_argument('-w', "--workers", help=f"Workers (cores) . ex: 4", type=int,
                         required=False, default=WORKERS)
     args = parser.parse_args()
@@ -73,13 +77,16 @@ def form():
     root.add_wellcome_message("Queries Analyzer")
 
     log_path = root.add_text_field(name="Log File Path", default="~/Downloads/mongodb.log", info="Path to log file")
-    start_time = root.add_text_field(name="Start Time", default="1970-01-01T00:00:00", info="Start time")
-    end_time = root.add_text_field(name="End Tme", default="2077-10-31T11:03:00", info="End time")
-    decoder_error_limit = root.add_num_field(name="Decoder Error Limit", default=100, info="Max allowed decoder errors")
-    max_print = root.add_num_field(name="Max print length", default=10, info="Max lines to print per report")
+    start_time = root.add_text_field(name="Start Time", default="1970-01-01T00:00:00",
+                                     info="Start time, format: %Y-%m-%dT%H:%M:%S")
+    end_time = root.add_text_field(name="End Tme", default="2077-10-31T11:03:00",
+                                   info="End time, format: format: %Y-%m-%dT%H:%M:%S")
+    # decoder_error_limit = root.add_num_field(name="Decoder Error Limit", default=100,
+    #                                          info="Max allowed decoder errors")
+    max_print = root.add_num_field(name="Max print length", default=10, info="Top N results to print per report")
     log_examples = root.add_num_field(name="Log Examples", default=1, info="Log examples to include in report")
-    workers = root.add_num_field(name="Workers", default=int(os.cpu_count()/2),
-                                 info="Workers (Probably shouldn't exceed CPU count)")
+    # workers = root.add_num_field(name="Workers", default=int(os.cpu_count()),
+    #                              info="Workers (Probably shouldn't exceed CPU count)")
     output_path = root.add_text_field(name="Output Path", default="", info="Path to save report files in. ex:"
                                                                            "\"~/Documents/Reports\"."
                                                                            "Leave empty to print results in console.")
@@ -101,6 +108,8 @@ def form():
                                           "ex: bytesRead, durationMillis")
     ratio = root.add_bool_field(name="Perform Ratio Analysis", default=False,
                                 info="Provide queries ratio statistics.")
+    qcount = root.add_bool_field(name="Count Query shapes", default=False,
+                                 info="count query shapes.")
 
     root.set_action_button(
         "Run Analyzer",
@@ -108,15 +117,16 @@ def form():
             path=log_path.get(),
             start_time=start_time.get(),
             end_time=end_time.get(),
-            error_limit=decoder_error_limit.get(),
+            error_limit=100,  # decoder_error_limit.get(),
             max_print=max_print.get(),
             # search_terms=search_terms.get(),
             log_examples=log_examples.get(),
             output_path=output_path.get(),
-            workers=workers.get(),
+            workers=os.cpu_count(),  # workers.get(),
             search=search.get(),
             ratio=ratio.get(),
             key_search=key_search.get(),
+            qcount=qcount.get(),
         )
     )
 
@@ -140,15 +150,13 @@ def analyzer_config(*args, **kwargs):
 
     search = kwargs['search'].split(",") if kwargs.get('search') and kwargs['search'] else None
 
-    if not kwargs.get('key_search') and not search and not kwargs.get('ratio'):  # and not search_terms:
+    if not kwargs.get('key_search') and not search and not kwargs.get('ratio') and not kwargs.get("qcount"):
         for i in range(4):
             print(end=f"\r{'.' * (i + 1)}")
             time.sleep(0.3)
         print(end="\rNo analysis selected.")
-        time.sleep(0.5)
-        print(end="\rThank you.")
-        time.sleep(0.5)
-        print(end="\rNext!")
+        print("\nThank you.")
+
     else:
         analyzer_executor(
             path=kwargs['path'],
@@ -164,11 +172,12 @@ def analyzer_config(*args, **kwargs):
             ratio_threshold=kwargs.get('ratio_threshold') or 1000,
             search=search,
             key_search=kwargs.get('key_search'),
+            qcount=kwargs.get("qcount"),
         )
 
 
 def analyzer_executor(path, start_time, end_time, search: list, workers=1,
-                      err_limit: int = 100, max_print: int = 10, ratio: bool = False,
+                      err_limit: int = 100, max_print: int = 10, ratio: bool = False, qcount=False,
                       ratio_threshold=1000, key_search=None, log_examples=0, output_path=None):
     qin = Queue()
     qout = Queue()
@@ -181,8 +190,7 @@ def analyzer_executor(path, start_time, end_time, search: list, workers=1,
 
     ratio_report = list()
     key_search_report = list()
-
-    time_stamps = dict(min_ts=None, max_ts=None)
+    query_count_report = list()
 
     # Search Report
     fs_report = dict(examples=list(), ns=dict(), query_shapes=list())
@@ -218,7 +226,7 @@ def analyzer_executor(path, start_time, end_time, search: list, workers=1,
 
     report_handler = Thread(target=task_generate_reports,
                             args=(qout, qout_done, reports_done, reports_failed,
-                                  ratio_report, key_search_report, fs_report),
+                                  ratio_report, key_search_report, fs_report, query_count_report),
                             daemon=True)
     report_handler.start()
 
@@ -229,7 +237,8 @@ def analyzer_executor(path, start_time, end_time, search: list, workers=1,
                                           path, err_limit, start_time, end_time,
                                           ratio,
                                           key_search,
-                                          search_include, search_exclude, ),
+                                          search_include, search_exclude,
+                                          qcount, ),
                                     )
         procs.append(p)
         p.start()
@@ -271,13 +280,19 @@ def analyzer_executor(path, start_time, end_time, search: list, workers=1,
     analyzer_reporter(max_print=max_print, output_path=output_path, log_examples=log_examples,
                       ratio=ratio, ratio_report=ratio_report,
                       key_search=key_search, key_search_report=key_search_report,
-                      search=search, fs_report=fs_report, )
+                      search=search, fs_report=fs_report,
+                      qcount=qcount, query_count_report=query_count_report, )
+
+    # TODO: calculate min/max ts in analyzed range
+    # min_ts = None
+    # max_ts = None
 
 
 def analyzer_reporter(max_print, output_path, log_examples,
                       ratio, ratio_report,
                       key_search, key_search_report,
-                      search, fs_report, ):
+                      search, fs_report,
+                      qcount, query_count_report, ):
     ##########
     # OUTPUT #
     ##########
@@ -362,6 +377,19 @@ def analyzer_reporter(max_print, output_path, log_examples,
             for k, v in i[1].items():
                 ratio_output += f"\t{k}: {v}\n"
         util_handle_report_output(ratio_output, "ratio_report.txt", OVERWRITE_REPORTS, output_path)
+
+    #######################
+    # Query shape Counter #
+    #######################
+    if qcount:
+        qcount_output = ""
+        qcount_output += f"\n{'*' * 23}\n* Query Shape Counter *\n{'*' * 23}\n\n"
+        qcount_output += f"Showing {max_print} most frequent queries.\n\n"
+        for i in enumerate(sorted(query_count_report, key=lambda x: x['Count'], reverse=True)[:max_print]):
+            qcount_output += f"Ratio Result {i[0] + 1}:\n"
+            for k, v in i[1].items():
+                qcount_output += f"\t{k}: {v}\n"
+        util_handle_report_output(qcount_output, "query_shape_count.txt", OVERWRITE_REPORTS, output_path)
 
 
 def parser_search_terms(search_terms, line, rep, line_json, ):
@@ -450,6 +478,23 @@ def parser_key_search(line_json, line, key, qout: Queue):
         qout.put(dict(report="key_search_report", result=result))
 
 
+def parser_query_count(line_json, line, qout: Queue):
+    ns = util_get_operation_namespace(line_json)
+    operation_detail = util_get_query_details(line_json, ns, line)
+    if operation_detail:
+        shape = operation_detail['filter']
+        plan = line_json['attr'].get('planSummary')
+
+        result = {
+            'Count': 1,
+            "query_shape": shape,
+            "ns": ns,
+            "planSummary": plan,
+            "example": line
+        }
+        qout.put(dict(report="query_count_report", result=result))
+
+
 def util_filename_add_ts(fn: str, prefix: bool = True):
     if prefix:
         return f"{datetime.strftime(datetime.now(), '%Y%m%d%H%M%S')}_{fn}"
@@ -488,22 +533,26 @@ def util_get_query_details(line_json, ns, line):
             op_type = list(line_json.get("attr").get("command").keys())[0]
 
             if op_type == "find":
-                qfilter = line_json["attr"]["command"]["filter"]
+                qfilter = line_json["attr"]["command"].get('filter', {})
                 qsort = line_json['attr']['command'].get('sort')
             elif op_type == "getMore":
                 qfilter = line_json["attr"]["originatingCommand"].get('filter')
                 qsort = line_json['attr']['originatingCommand'].get('sort')
             elif op_type == "aggregate":
                 qfilter = line_json["attr"]["command"]["pipeline"]
-            elif op_type == "distinct":
-                qfilter = line_json["attr"]["command"]["query"]
+            elif op_type in ("distinct", "count"):
+                qfilter = line_json["attr"]["command"].get("query", {})
             elif op_type in ("insert", "update"):
                 pass
             elif op_type == "delete":
                 pass
             elif op_type in ["hello", "serverStatus", "ismaster", "saslStart", "isMaster",
                              "_refreshQueryAnalyzerConfiguration", "ping", "replSetHeartbeat",
-                             "replSetUpdatePosition", "saslContinue", "collStats"]:
+                             "replSetUpdatePosition", "saslContinue",
+                             "getParameter", "replSetGetStatus", "listCollections", "listDatabases", "buildInfo",
+                             "collStats", "endSessions", "getCmdLineOpts", "getDefaultRWConcern", "connPoolStats",
+                             "getLog", "top", "hostInfo", "_isSelf", "rolesInfo", "buildinfo", "dbstats",
+                             "usersInfo", "listIndexes", "profile"]:
                 pass
             else:
                 print(f"\n{line}\n")
@@ -515,7 +564,7 @@ def util_get_query_details(line_json, ns, line):
                 qfilter = line_json["attr"]["command"].get("q")
                 qsort = line_json['attr']['command'].get('sort')
                 qupdate = line_json['attr']['command'].get('u')
-                update_shape = devalue_json(qupdate)
+                update_shape = get_mongo_filter_shape(qupdate)
 
         # Remove
         elif qtype == "remove":
@@ -528,7 +577,7 @@ def util_get_query_details(line_json, ns, line):
             raise NotImplementedError(f"\rOperation type \"{qtype}\" not parsed!\n{line}\n")
 
         if qfilter:
-            filter_shape = devalue_json(qfilter)
+            filter_shape = get_mongo_filter_shape(qfilter)
             query_details = dict()
             query_details['type'] = f"{qtype}({op_type})" if op_type else qtype
             query_details['ns'] = ns
@@ -598,7 +647,8 @@ def task_generate_queue(qin: Queue, qin_done: Event, lines: list):
 
 
 def task_generate_reports(qout: Queue, qout_done: Event, reports_done: Event, reports_failed: Event,
-                          ratio_report: list, key_search_report: list, full_search_report: dict):
+                          ratio_report: list, key_search_report: list, full_search_report: dict,
+                          query_count_report: list):
     try:
         while not reports_done.is_set():
             if qout.empty():
@@ -651,11 +701,13 @@ def task_generate_reports(qout: Queue, qout_done: Event, reports_done: Event, re
                                     i['planSummary'] = result['planSummary']
                                     i['example'] = result['example']
                                 i['Count'] += 1
+                                break
                     else:
                         for i in key_search_report:
                             if i['query_shape'] == result['query_shape'] and i['value'] == result['value']:
                                 i['Count'] += 1
                                 found = True
+                                break
                     if not found:
                         result['Count'] = 1
                         key_search_report.append(result)
@@ -678,6 +730,17 @@ def task_generate_reports(qout: Queue, qout_done: Event, reports_done: Event, re
                         result['Count'] = 1
                         ratio_report.append(result)
 
+                elif report == "query_count_report":
+                    found = False
+                    for i in query_count_report:
+                        if i['query_shape'] == result['query_shape']:
+                            found = True
+                            i['Count'] += 1
+                            break
+                    if not found:
+                        result['Count'] = 1
+                        query_count_report.append(result)
+
                 else:
                     raise NotImplementedError(f"Unexpected Report key: \"{report}\".")
     except Exception as err:
@@ -689,7 +752,8 @@ def task_parse_log(qin: Queue, qout: Queue, qout_done: Event, qin_done: Event,
                    path, err_limit, start_time, end_time,
                    ratio,
                    key_search,
-                   full_search_include, full_search_exclude, ):
+                   full_search_include, full_search_exclude,
+                   qcount, ):
     json_decoder_errors_counter = 0
 
     while not qout_done.is_set():
@@ -790,6 +854,19 @@ def task_parse_log(qin: Queue, qout: Queue, qout_done: Event, qin_done: Event,
                     t.start()
                     work_threads.append(t)
                     # parser_key_search(line_json, line, key_search, qout)
+
+            ###############
+            # QUERY COUNT #
+            ###############
+            if qcount:
+                if date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
+                        and "docsExamined" in line and "nreturned" in line:
+                    t = Thread(target=parser_query_count,
+                               args=(line_json, line, qout,),
+                               daemon=True)
+                    t.start()
+                    work_threads.append(t)
+                    # parser_ratio(line, line_json, qout, )
 
             for t in work_threads:
                 t.join()
