@@ -21,7 +21,7 @@ MAX_LOG_PRINT = 1
 OUTPUT_PATH = None  # "~/Documents/reports"
 KEY_SEARCH = None  # "bytesRead"
 OVERWRITE_REPORTS = False
-WORKERS = int(os.cpu_count()/2)
+WORKERS = 1  # os.cpu_count()
 
 SEARCH_TERMS = ""
 SEARCH = ""
@@ -117,12 +117,12 @@ def form():
             path=log_path.get(),
             start_time=start_time.get(),
             end_time=end_time.get(),
-            error_limit=100,  # decoder_error_limit.get(),
+            error_limit=DECODER_ERR_MAX,  # decoder_error_limit.get(),
             max_print=max_print.get(),
             # search_terms=search_terms.get(),
             log_examples=log_examples.get(),
             output_path=output_path.get(),
-            workers=os.cpu_count(),  # workers.get(),
+            workers=WORKERS,  # workers.get(),
             search=search.get(),
             ratio=ratio.get(),
             key_search=key_search.get(),
@@ -221,13 +221,13 @@ def analyzer_executor(path, start_time, end_time, search: list, workers=1,
 
     qin_generator = Thread(target=task_generate_queue,
                            args=(qin, qin_done, log_file),
-                           daemon=True)
+                           daemon=False)
     qin_generator.start()
 
     report_handler = Thread(target=task_generate_reports,
                             args=(qout, qout_done, reports_done, reports_failed,
                                   ratio_report, key_search_report, fs_report, query_count_report),
-                            daemon=True)
+                            daemon=False)
     report_handler.start()
 
     procs = list()
@@ -564,7 +564,7 @@ def util_get_query_details(line_json, ns, line):
                 qfilter = line_json["attr"]["command"].get("q")
                 qsort = line_json['attr']['command'].get('sort')
                 qupdate = line_json['attr']['command'].get('u')
-                update_shape = get_mongo_filter_shape(qupdate)
+                update_shape = devalue_json(qupdate)
 
         # Remove
         elif qtype == "remove":
@@ -577,7 +577,7 @@ def util_get_query_details(line_json, ns, line):
             raise NotImplementedError(f"\rOperation type \"{qtype}\" not parsed!\n{line}\n")
 
         if qfilter:
-            filter_shape = get_mongo_filter_shape(qfilter)
+            filter_shape = devalue_json(qfilter)
             query_details = dict()
             query_details['type'] = f"{qtype}({op_type})" if op_type else qtype
             query_details['ns'] = ns
