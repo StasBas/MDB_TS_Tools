@@ -37,12 +37,12 @@ Add by either configuration in IDE or "export" command.
 
 ### Installation
 
-Step-by-step instructions on how to install your project. You can use code blocks for commands:
-
+Tu run the binaries you may allow executing them via the settings privacy & security.
 ```bash
-$ git clone StasBas/MDB_TS_Tools
+$ git clone git@github.com:StasBas/MDB_TS_Tools.git
 $ cd MDB_TS_Tools
-$ ./MDB_TS_Tools/connection_analyzer/mac_ARM_build/dist/connections_analyzer
+$ chmod +x ./MDB_TS_Tools/bonaries/mac_ARM_build/connections_analyzer
+$ ./MDB_TS_Tools/bonaries/mac_ARM_build/connections_analyzer
 ```
 
 To run the code:
@@ -55,7 +55,7 @@ pip3 install virtualenv
 
 
 ```bash
-$ git clone StasBas/MDB_TS_Tools
+$ git clone git@github.com:StasBas/MDB_TS_Tools.git
 $ cd MDB_TS_Tools
 $ virtualenv env
 $ source env/bin/activate
