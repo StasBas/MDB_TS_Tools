@@ -93,12 +93,13 @@ def analyze_connections(log_file_path: str, start_time: str, end_time: str, app_
     :param decoder_error_limit:
     :return:
     """
-    try:
-        # TODO: need to remove this and replace with file size property instead
-        num_lines = sum(1 for _ in open(log_file_path, 'r'))
-        print(f"Reading \'{log_file_path}\'")
-    except FileNotFoundError:
-        raise FileNotFoundError(f"No such file: \'{log_file_path}\'")
+    file_stats = os.stat(log_file_path)
+    # try:
+    #     # TODO: need to remove this and replace with file size property instead
+    #     num_lines = sum(1 for _ in open(log_file_path, 'r'))
+    #     print(f"Reading \'{log_file_path}\'")
+    # except FileNotFoundError:
+    #     raise FileNotFoundError(f"No such file: \'{log_file_path}\'")
 
     # General Params
     first_ts = None
@@ -115,7 +116,8 @@ def analyze_connections(log_file_path: str, start_time: str, end_time: str, app_
     print("Parsing log")
     import time
     with open(log_file_path, 'r') as f:
-        for i, line in enumerate(tqdm(f, total=num_lines, file=sys.stdout)):
+        for i, line in enumerate(f):  # (tqdm(f, total=num_lines, file=sys.stdout)):
+            print(end=f"\rProcessing line {i} ")
             if line and line != "\n" and line != "\r" and line != "\n\r":
 
                 # Log line to JSON (structured log)
