@@ -20,7 +20,7 @@ from threading import Thread
 import _thread
 from multiprocessing import Process, Queue, freeze_support, Event
 
-CONN_STR = "mongodb://localhost:27017"
+CONN_STR = None  # "mongodb://localhost:27017"
 
 # EXECUTION
 ITERATIONS = 100  # REQUESTS (will affect duration)
@@ -622,21 +622,24 @@ def form():
     buttons_frame.pack(anchor=tk.SE, expand=0, fill='x', ipady=20)  # , fill=tk.Y, expand=True)
 
     # Buttons Frame Buttons
-    cmd = (lambda: populate_db(
-        connection_string=cs.get(),
-        database=db.get(),
-        collection=coll.get(),
-        iterations=it.get(),
-        docs_count=docs_count.get(),
-        concurrency=concurrency.get(),
-        sample=sample.get(),
-        drop=drop.get(),
-        username=username.get(),
-        password=password.get(),
-        tls=tls.get(),
-        formConfig=True,
-        bulk=bulk)
-           )
+    cmd = (
+        lambda: populate_db(
+            connection_string=cs.get(),
+            database=db.get(),
+            collection=coll.get(),
+            iterations=it.get(),
+            docs_count=docs_count.get(),
+            concurrency=concurrency.get(),
+            sample=sample.get(),
+            drop=drop.get(),
+            username=username.get(),
+            password=password.get(),
+            tls=tls.get(),
+            formConfig=True,
+            bulk=bulk.get(),
+        )
+    )
+
     tk.Button(buttons_frame, text="Execute", command=cmd).pack(side="right")
     tk.Button(buttons_frame, text="Exit", command=lambda: close_window(root)).pack(side='right')
 
