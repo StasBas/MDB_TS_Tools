@@ -22,6 +22,7 @@ OUTPUT_PATH = None  # "~/Documents/reports"
 KEY_SEARCH = None  # "bytesRead"
 OVERWRITE_REPORTS = False
 WORKERS = 1  # os.cpu_count()
+MAX_FILE_SIZE_FOR_READ_AHEAD = 4000000000
 
 SEARCH_TERMS = ""
 SEARCH = ""
@@ -213,21 +214,29 @@ def analyzer_executor(path, start_time, end_time, search: list, workers=1,
     #         }
 
     try:
-        with open(path) as f:
-            print(f"Reading \'{path}\'")
-            log_file = f.readlines()
+        file_size = os.stat(path).st_size
     except FileNotFoundError:
         raise FileNotFoundError(f"No such file: \'{path}\'")
 
-    qin_generator = Thread(target=task_generate_queue,
-                           args=(qin, qin_done, log_file),
-                           daemon=False)
+    if file_size < MAX_FILE_SIZE_FOR_READ_AHEAD:
+        with open(path) as f:
+            print(f"Reading \'{path}\'")
+            lines = f.readlines()
+        g_args = (qin, qin_done, lines)
+    else:
+        g_args = (qin, qin_done, path)
+
+    qin_generator = multiprocessing.Process(target=task_generate_queue,
+                                            args=g_args,
+                                            daemon=False)
     qin_generator.start()
 
-    report_handler = Thread(target=task_generate_reports,
-                            args=(qout, qout_done, reports_done, reports_failed,
-                                  ratio_report, key_search_report, fs_report, query_count_report),
-                            daemon=False)
+    report_handler = Thread(
+        target=task_generate_reports,
+        args=(qout, qout_done, reports_done, reports_failed,
+              ratio_report, key_search_report, fs_report, query_count_report),
+        daemon=False
+    )
     report_handler.start()
 
     procs = list()
@@ -238,7 +247,7 @@ def analyzer_executor(path, start_time, end_time, search: list, workers=1,
                                           ratio,
                                           key_search,
                                           search_include, search_exclude,
-                                          qcount, ),
+                                          qcount,),
                                     )
         procs.append(p)
         p.start()
@@ -347,7 +356,7 @@ def analyzer_reporter(max_print, output_path, log_examples,
 
         search_output += f"\n\tText Search Log Examples ({log_examples} of {len(fs_report['examples'])}):\n"
         for example in fs_report['examples'][:log_examples]:
-            search_output += example
+            search_output += f"{example}\n"
 
         util_handle_report_output(search_output, "search_report.txt", OVERWRITE_REPORTS, output_path)
 
@@ -386,7 +395,7 @@ def analyzer_reporter(max_print, output_path, log_examples,
         qcount_output += f"\n{'*' * 23}\n* Query Shape Counter *\n{'*' * 23}\n\n"
         qcount_output += f"Showing {max_print} most frequent queries.\n\n"
         for i in enumerate(sorted(query_count_report, key=lambda x: x['Count'], reverse=True)[:max_print]):
-            qcount_output += f"Ratio Result {i[0] + 1}:\n"
+            qcount_output += f"Query Shape Count Result {i[0] + 1}:\n"
             for k, v in i[1].items():
                 qcount_output += f"\t{k}: {v}\n"
         util_handle_report_output(qcount_output, "query_shape_count.txt", OVERWRITE_REPORTS, output_path)
@@ -448,11 +457,11 @@ def parser_ratio(line: str, line_json: dict, qout: Queue, ratio_threshold: int =
             'Count': 1,
             'Ratio': int(ratio),
             "query_shape": shape,
+            "planSummary": plan,
             "ns": ns,
             "docsExamined": scanned,
             "nreturned": returned,
             "keysExamined": keys,
-            "planSummary": plan,
             "example": line
         }
         qout.put(dict(report="ratio_report", result=result))
@@ -471,8 +480,8 @@ def parser_key_search(line_json, line, key, qout: Queue):
             "attribute": key,
             "value": value,
             "query_shape": shape,
-            "ns": ns,
             "planSummary": plan,
+            "ns": ns,
             "example": line
         }
         qout.put(dict(report="key_search_report", result=result))
@@ -488,8 +497,8 @@ def parser_query_count(line_json, line, qout: Queue):
         result = {
             'Count': 1,
             "query_shape": shape,
-            "ns": ns,
             "planSummary": plan,
+            "ns": ns,
             "example": line
         }
         qout.put(dict(report="query_count_report", result=result))
@@ -636,14 +645,23 @@ def util_update_time_stamps(min_ts, max_ts, ts):
     return min_ts, max_ts
 
 
-def task_generate_queue(qin: Queue, qin_done: Event, lines: list):
-    i = 0
-    print(f"Reading log")
-    for line in lines:
-        print_progress_bar(i + 1, len(lines), length=30)
-        qin.put(line)
-        i += 1
-    qin_done.set()
+def task_generate_queue(qin: Queue, qin_done: Event, file):
+    if isinstance(file, list):
+        i = 0
+        print(f"Reading log")
+        for line in file:
+            print_progress_bar(i + 1, len(file), length=30)
+            qin.put(line)
+            i += 1
+        qin_done.set()
+    else:
+        print(f"reading {file}")
+        with open(file) as f:
+            for i, line in enumerate(f):
+                print(end=f"\rReading line \'{i}\'")
+                qin.put(line)
+        print(f"\rLines Read: {i}")
+        qin_done.set()
 
 
 def task_generate_reports(qout: Queue, qout_done: Event, reports_done: Event, reports_failed: Event,
@@ -820,9 +838,8 @@ def task_parse_log(qin: Queue, qout: Queue, qout_done: Event, qin_done: Event,
                                 match = False
                                 break
                     if match:
-
                         t = Thread(target=parser_full_search,
-                                   args=(line, line_json, qout, ),
+                                   args=(line, line_json, qout,),
                                    daemon=True)
                         t.start()
                         work_threads.append(t)
@@ -847,7 +864,6 @@ def task_parse_log(qin: Queue, qout: Queue, qout_done: Event, qin_done: Event,
             if key_search:
                 if date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
                         and key_search in line:
-
                     t = Thread(target=parser_key_search,
                                args=(line_json, line, key_search, qout),
                                daemon=True)
