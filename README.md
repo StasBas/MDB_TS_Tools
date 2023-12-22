@@ -41,7 +41,7 @@ Tu run the binaries you may allow executing them via the settings privacy & secu
 ```bash
 $ git clone git@github.com:StasBas/MDB_TS_Tools.git
 $ cd MDB_TS_Tools
-$ chmod +x ./MDB_TS_Tools/bonaries/mac_ARM_build/connections_analyzer
+$ chmod +x ./MDB_TS_Tools/binaries/mac_ARM_build/connections_analyzer
 $ ./MDB_TS_Tools/bonaries/mac_ARM_build/connections_analyzer
 ```
 

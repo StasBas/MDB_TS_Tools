@@ -14,7 +14,7 @@ PATH = None  # "~/Downloads/zoharSample.log"
 TIME_S = "1970-01-01T00:00:00"
 TIME_E = "2071-10-11T00:00:00"
 DECODER_ERR_MAX = 100
-MAX_FILE_SIZE = 3000000000
+MAX_FILE_SIZE = 3 * (10 ** 9)
 
 WORKERS = os.cpu_count()
 
