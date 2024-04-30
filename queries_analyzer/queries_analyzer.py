@@ -446,7 +446,7 @@ def parser_ratio(line: str, line_json: dict, qout: Queue, ratio_threshold: int =
     scanned = line_json['attr'].get('docsExamined')
     returned = line_json['attr'].get('nreturned')
     plan = line_json['attr'].get('planSummary')
-    keys = line_json.get('keysExamined')
+    keys = line_json['attr'].get('keysExamined')
 
     if scanned and returned:
         ratio = float(scanned) / returned
@@ -862,14 +862,14 @@ def task_parse_log(qin: Queue, qout: Queue, qout_done: Event, qin_done: Event,
             # Key Search #
             ##############
             if key_search:
-                if date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time) \
-                        and key_search in line:
-                    t = Thread(target=parser_key_search,
-                               args=(line_json, line, key_search, qout),
-                               daemon=True)
-                    t.start()
-                    work_threads.append(t)
-                    # parser_key_search(line_json, line, key_search, qout)
+                if date_from_string(end_time) > date_from_string(time_stamp) > date_from_string(start_time):
+                    if key_search in line:
+                        t = Thread(target=parser_key_search,
+                                   args=(line_json, line, key_search, qout),
+                                   daemon=True)
+                        t.start()
+                        work_threads.append(t)
+                        # parser_key_search(line_json, line, key_search, qout)
 
             ###############
             # QUERY COUNT #
