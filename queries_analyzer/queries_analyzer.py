@@ -21,7 +21,7 @@ MAX_LOG_PRINT = 1
 OUTPUT_PATH = None  # "~/Documents/reports"
 KEY_SEARCH = None  # "bytesRead"
 OVERWRITE_REPORTS = False
-WORKERS = 1  # os.cpu_count()
+WORKERS = int(os.cpu_count())/2
 MAX_FILE_SIZE_FOR_READ_AHEAD = 4000000000
 
 SEARCH_TERMS = ""
@@ -673,7 +673,7 @@ def task_generate_reports(qout: Queue, qout_done: Event, reports_done: Event, re
                 if qout_done.is_set():
                     reports_done.set()
                 else:
-                    time.sleep(0.1)
+                    time.sleep(1)
             else:
                 item = qout.get()
                 report = item.get('report')
@@ -779,7 +779,7 @@ def task_parse_log(qin: Queue, qout: Queue, qout_done: Event, qin_done: Event,
             if qin_done.is_set():
                 qout_done.set()
             else:
-                time.sleep(0.1)
+                time.sleep(1)
         else:
             line = qin.get()
             work_threads = list()
