@@ -21,8 +21,8 @@ MAX_LOG_PRINT = 1
 OUTPUT_PATH = None  # "~/Documents/reports"
 KEY_SEARCH = None  # "bytesRead"
 OVERWRITE_REPORTS = False
-WORKERS = int(os.cpu_count())/2
-MAX_FILE_SIZE_FOR_READ_AHEAD = 4000000000
+WORKERS = os.cpu_count() - 1 or 1
+MAX_FILE_SIZE_FOR_READ_AHEAD = 1
 
 SEARCH_TERMS = ""
 SEARCH = ""
